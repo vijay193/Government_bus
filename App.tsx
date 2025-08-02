@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/navigation/ProtectedRoute';
 import AdminRoute from './components/navigation/AdminRoute';
+import './styles.css';
 
 import { Header } from './components/Header';
 import { HomePage } from './pages/HomePage';
