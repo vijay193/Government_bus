@@ -1,3 +1,4 @@
+
 /* 
    ========================================
    Haryana Bus - Main Stylesheet
@@ -862,6 +863,13 @@ button {
 .auth-form__error {
     color: var(--color-danger);
     background-color: var(--color-danger-light);
+    padding: 0.75rem;
+    border-radius: var(--border-radius-md);
+    text-align: center;
+}
+.auth-form__success {
+    color: var(--color-success-text);
+    background-color: var(--color-success-light);
     padding: 0.75rem;
     border-radius: var(--border-radius-md);
     text-align: center;

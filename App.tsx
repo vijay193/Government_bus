@@ -1,8 +1,11 @@
+
+
 import React from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/navigation/ProtectedRoute';
 import AdminRoute from './components/navigation/AdminRoute';
+import UserRoute from './components/navigation/UserRoute';
 
 import { Header } from './components/Header';
 import { HomePage } from './pages/HomePage';
@@ -11,6 +14,7 @@ import { RegisterPage } from './pages/RegisterPage';
 import { BookingPage } from './pages/BookingPage';
 import { TrackingPage } from './pages/TrackingPage';
 import { UserDashboardPage } from './pages/UserDashboardPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { AdminLayout } from './pages/admin/AdminLayout';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
@@ -19,6 +23,7 @@ import { AdminUserManagementPage } from './pages/admin/UserManagementPage';
 import { RevenueAnalyticsPage } from './pages/admin/RevenueAnalyticsPage';
 import { UploadSchedulesPage } from './pages/admin/UploadSchedulesPage';
 import { ManageSchedulesPage } from './pages/admin/ManageSchedulesPage';
+import { BulkUserUploadPage } from './pages/admin/BulkUserUploadPage';
 
 
 const App: React.FC = () => {
@@ -39,17 +44,25 @@ const App: React.FC = () => {
               <Route
                 path="/dashboard"
                 element={
-                  <ProtectedRoute>
+                  <UserRoute>
                     <UserDashboardPage />
+                  </UserRoute>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <ProfilePage />
                   </ProtectedRoute>
                 }
               />
               <Route
                 path="/book/:scheduleId"
                 element={
-                  <ProtectedRoute>
+                  <UserRoute>
                     <BookingPage />
-                  </ProtectedRoute>
+                  </UserRoute>
                 }
               />
 
@@ -68,6 +81,7 @@ const App: React.FC = () => {
                   <Route path="revenue" element={<RevenueAnalyticsPage />} />
                   <Route path="schedules" element={<UploadSchedulesPage />} />
                   <Route path="manage-schedules" element={<ManageSchedulesPage />} />
+                  <Route path="bulk-users" element={<BulkUserUploadPage />} />
               </Route>
 
               {/* Not Found Route */}

@@ -25,12 +25,16 @@ try {
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
+    flags: ['-FOUND_ROWS'] // Important for knowing if an UPDATE actually changed a row
   });
   console.log('Database connection pool created.');
 } catch (error) {
   console.error('Failed to create database pool:', error);
   process.exit(1);
 }
+
+// --- In-memory store for OTP simulation ---
+const otpStore = {}; // In-memory: { 'phone': { otp: '123456', expires: Date.now() + 300000 } }
 
 // --- Helper Functions ---
 
@@ -189,18 +193,18 @@ apiRouter.get('/districts', async (req, res) => {
 
 // [POST] /api/auth/register
 apiRouter.post('/auth/register', async (req, res) => {
-  const { fullName, email, phone, password } = req.body;
-  if (!fullName || !phone || !password) {
-    return res.status(400).json({ message: 'Full name, phone, and password are required.' });
+  const { fullName, email, phone, password, gender, dob } = req.body;
+  if (!fullName || !email || !phone || !password || !gender || !dob) {
+    return res.status(400).json({ message: 'All fields are required.' });
   }
 
   try {
     const userId = uuidv4();
-    const newUser = { id: userId, fullName, email, phone, password: password, role: 'USER' };
+    const newUser = { id: userId, fullName, email, phone, password, gender, dob, role: 'USER' };
 
     await dbPool.query(
-      'INSERT INTO users (id, fullName, email, phone, password, role) VALUES (?, ?, ?, ?, ?, ?)',
-      [newUser.id, newUser.fullName, newUser.email, newUser.phone, newUser.password, newUser.role]
+      'INSERT INTO users (id, fullName, email, phone, password, gender, dob, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [newUser.id, newUser.fullName, newUser.email, newUser.phone, newUser.password, newUser.gender, newUser.dob, newUser.role]
     );
 
     const { password: _, ...userToReturn } = newUser;
@@ -227,6 +231,9 @@ apiRouter.post('/auth/login', async (req, res) => {
     if (!user || user.password !== password) {
       return res.status(401).json({ message: 'Invalid phone number or password.' });
     }
+    if (user.password === null) {
+      return res.status(401).json({ message: 'This account uses OTP login. Please use the "Login with OTP" option.' });
+    }
 
     if (user.role === 'SUB_ADMIN') {
         const [districtRows] = await dbPool.query('SELECT district FROM subadmindistricts WHERE userId = ?', [user.id]);
@@ -239,6 +246,79 @@ apiRouter.post('/auth/login', async (req, res) => {
     handleDBError(res, error, 'login');
   }
 });
+
+// [POST] /api/auth/send-otp
+apiRouter.post('/auth/send-otp', async (req, res) => {
+    const { phone } = req.body;
+    if (!phone) {
+        return res.status(400).json({ message: 'Phone number is required.' });
+    }
+
+    try {
+        // Fetch both password and registration number to make a decision
+        const [rows] = await dbPool.query('SELECT password, govtExamRegistrationNumber FROM users WHERE phone = ?', [phone]);
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'No account found with this phone number.' });
+        }
+        
+        const user = rows[0];
+
+        // Block OTP login ONLY if the user has a password AND is NOT a govt beneficiary.
+        // Beneficiaries should be able to use OTP regardless of password status.
+        if (user.password !== null && !user.govtExamRegistrationNumber) {
+            return res.status(400).json({ message: 'This account uses a password. Please use the standard login.' });
+        }
+        
+        // Generate a 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expires = Date.now() + 5 * 60 * 1000; // 5 minutes validity
+
+        // Store OTP (in-memory for this project)
+        otpStore[phone] = { otp, expires };
+        console.log(`OTP for ${phone}: ${otp}`); // Log for simulation
+
+        // In a real app, you would use an SMS gateway here.
+        // For this project, we return the OTP in the response for the user to see and enter.
+        res.json({ message: 'OTP has been generated.', otp });
+    } catch (error) {
+        handleDBError(res, error, 'sendOtp');
+    }
+});
+
+// [POST] /api/auth/verify-otp
+apiRouter.post('/auth/verify-otp', async (req, res) => {
+    const { phone, otp } = req.body;
+    if (!phone || !otp) {
+        return res.status(400).json({ message: 'Phone and OTP are required.' });
+    }
+
+    const storedOtpData = otpStore[phone];
+    if (!storedOtpData || storedOtpData.otp !== otp) {
+        return res.status(401).json({ message: 'Invalid OTP.' });
+    }
+    if (Date.now() > storedOtpData.expires) {
+        delete otpStore[phone];
+        return res.status(401).json({ message: 'OTP has expired. Please request a new one.' });
+    }
+
+    // OTP is valid, fetch user and log them in
+    try {
+        const [rows] = await dbPool.query('SELECT * FROM users WHERE phone = ?', [phone]);
+        const user = rows[0];
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found after OTP verification.' });
+        }
+
+        delete otpStore[phone]; // Clean up used OTP
+        const { password: _, ...userToReturn } = user;
+        res.json(userToReturn);
+
+    } catch (error) {
+        handleDBError(res, error, 'verifyOtpLogin');
+    }
+});
+
 
 // --- Settings Routes (Admin) ---
 // In a real app, these should be protected by an admin-only middleware.
@@ -405,7 +485,7 @@ apiRouter.post('/schedules/batch-upload', async (req, res) => {
             // Insert the main schedule record
             await connection.query(
                 'INSERT INTO schedules (id, busName, seatLayout, bookingEnabled) VALUES (?, ?, ?, ?)',
-                [scheduleId, String(schedule.busName), String(schedule.seatLayout), schedule.bookingEnabled ? '1' : '0']
+                [String(schedule.busName), String(schedule.seatLayout), schedule.bookingEnabled ? '1' : '0']
             );
 
             // Loop through each stop for the current schedule
@@ -759,11 +839,8 @@ apiRouter.post('/bookings/free', async (req, res) => {
             return res.status(403).json({ message: 'Free booking is currently disabled by the administrator.' });
         }
         
-        // This assumes a govtbeneficiaries table exists
-        // with columns: id, registrationNumber, phone, ticketClaimed (BOOLEAN)
-        // NOTE: The user's schema list did not include 'govtbeneficiaries'. This may fail if the table doesn't exist.
         const [beneficiaryRows] = await connection.query(
-            "SELECT * FROM govtbeneficiaries WHERE govtExamRegistrationNumber = ? AND phone = ?",
+            "SELECT * FROM govtbeneficiaries WHERE govtExamRegistrationNumber = ? AND phone = ? FOR UPDATE",
             [registrationNumber, phone]
         );
 
@@ -780,9 +857,9 @@ apiRouter.post('/bookings/free', async (req, res) => {
         
         const bookingId = uuidv4();
         await connection.query(
-  'INSERT INTO bookings (id, userId, scheduleId, fare, origin, destination, isFreeTicket) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  [bookingId, userId, scheduleId, 0, origin, destination, true]
-);
+          'INSERT INTO bookings (id, userId, scheduleId, fare, origin, destination, isFreeTicket, govtExamRegistrationNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [bookingId, userId, scheduleId, 0, origin, destination, true, registrationNumber]
+        );
 
 
         const seatInsertPromises = seatIds.map(seatId =>
@@ -790,13 +867,17 @@ apiRouter.post('/bookings/free', async (req, res) => {
         );
         await Promise.all(seatInsertPromises);
         
-        // Mark the ticket as claimed
-        // Ensure user's govtExamRegistrationNumber is stored (critical for joins)
-await connection.query(
-  "UPDATE users SET govtExamRegistrationNumber = ? WHERE id = ?",
-  [registrationNumber, userId]
-);
-
+        // Mark the ticket as claimed in the beneficiaries table
+        await connection.query(
+            "UPDATE govtbeneficiaries SET ticketClaimed = 1 WHERE id = ?",
+            [beneficiary.id]
+        );
+        
+        // Also update the user's registration number if it's not already set
+        await connection.query(
+            "UPDATE users SET govtExamRegistrationNumber = ? WHERE id = ? AND govtExamRegistrationNumber IS NULL",
+            [registrationNumber, userId]
+        );
 
         await connection.commit();
         res.status(201).json({ bookingId });
@@ -872,6 +953,154 @@ apiRouter.get('/tracking/:busId', async (req, res) => {
 
 // --- User Management Routes (Admin) ---
 
+// [PUT] /api/users/profile/:id - For a user to update their own profile
+apiRouter.put('/users/profile/:id', async (req, res) => {
+    const { id } = req.params;
+    const { fullName, email, phone, gender, password, dob } = req.body;
+
+    if (!id) {
+        return res.status(400).json({ message: 'User ID is required.' });
+    }
+    
+    const connection = await dbPool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const fieldsToUpdate = { fullName, email, phone, gender, dob };
+        let sql = 'UPDATE users SET ';
+        const params = [];
+        
+        Object.keys(fieldsToUpdate).forEach((key) => {
+            if (fieldsToUpdate[key] !== undefined) {
+                if (params.length > 0) sql += ', ';
+                sql += `\`${key}\` = ?`;
+                params.push(fieldsToUpdate[key]);
+            }
+        });
+
+        if (password) {
+            if (params.length > 0) sql += ', ';
+            sql += '`password` = ?';
+            params.push(password);
+        }
+
+        if (params.length === 0) {
+            connection.release();
+            return res.status(400).json({ message: 'No fields to update.' });
+        }
+
+        sql += ' WHERE id = ?';
+        params.push(id);
+
+        await connection.query(sql, params);
+
+        // If phone number was changed, sync it to the govtbeneficiaries table
+        if (phone) {
+            await connection.query(
+                `UPDATE govtbeneficiaries gb
+                 JOIN users u ON gb.govtExamRegistrationNumber = u.govtExamRegistrationNumber
+                 SET gb.phone = ?
+                 WHERE u.id = ?`,
+                 [phone, id]
+            );
+        }
+
+        await connection.commit();
+
+        // Fetch and return the updated user data (without password)
+        const [rows] = await connection.query('SELECT * FROM users WHERE id = ?', [id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'User not found after update.' });
+        }
+        const { password: _, ...updatedUser } = rows[0];
+
+        res.status(200).json(updatedUser);
+
+    } catch (error) {
+        await connection.rollback();
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'Email or phone number already in use.' });
+        }
+        handleDBError(res, error, 'updateUserProfile');
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// [POST] /api/users/bulk-beneficiaries - For an admin to create multiple beneficiary users
+apiRouter.post('/users/bulk-beneficiaries', async (req, res) => {
+    const { beneficiaries, adminId } = req.body;
+    
+    if (!adminId) {
+        return res.status(403).json({ message: 'Admin authentication is required.' });
+    }
+    if (!Array.isArray(beneficiaries) || beneficiaries.length === 0) {
+        return res.status(400).json({ message: 'A non-empty array of beneficiaries is required.' });
+    }
+
+    const connection = await dbPool.getConnection();
+    try {
+        // --- Authorization Check ---
+        const [adminRows] = await connection.query('SELECT role FROM users WHERE id = ?', [adminId]);
+        if (adminRows.length === 0 || adminRows[0].role !== 'ADMIN') {
+            connection.release();
+            return res.status(403).json({ message: 'Permission denied. This action is for administrators only.' });
+        }
+
+        await connection.beginTransaction();
+
+        let createdCount = 0;
+        let skippedCount = 0;
+        
+        for (const bene of beneficiaries) {
+            const { govtExamRegistrationNumber, phone, fullName, email, dob } = bene;
+
+            // Basic validation for each record
+            if (!govtExamRegistrationNumber || !phone || !fullName) {
+                console.log('Skipping invalid record:', bene);
+                skippedCount++;
+                continue;
+            }
+
+            // Check if user already exists
+            const [existingUser] = await connection.query('SELECT id FROM users WHERE phone = ? OR govtExamRegistrationNumber = ?', [phone, govtExamRegistrationNumber]);
+            if (existingUser.length > 0) {
+                console.log(`Skipping existing user: phone=${phone}, regNo=${govtExamRegistrationNumber}`);
+                skippedCount++;
+                continue;
+            }
+            
+            const userId = uuidv4();
+            // Insert into users table with NULL password
+            await connection.query(
+                `INSERT INTO users (id, fullName, email, phone, password, role, govtExamRegistrationNumber, isFreeTicketEligible, dob) VALUES (?, ?, ?, ?, NULL, 'USER', ?, 1, ?)`,
+                [userId, fullName, email || null, phone, govtExamRegistrationNumber, dob || null]
+            );
+
+            // Insert into govtbeneficiaries table, or update if it exists
+            await connection.query(
+                `INSERT INTO govtbeneficiaries (id, govtExamRegistrationNumber, phone, ticketClaimed) VALUES (?, ?, ?, 0) ON DUPLICATE KEY UPDATE phone = VALUES(phone)`,
+                [uuidv4(), govtExamRegistrationNumber, phone]
+            );
+
+            createdCount++;
+        }
+
+        await connection.commit();
+        res.status(201).json({ 
+            message: 'Bulk user creation process completed.',
+            created: createdCount,
+            skipped: skippedCount
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        handleDBError(res, error, 'bulkCreateBeneficiaries');
+    } finally {
+        connection.release();
+    }
+});
+
+
 // [GET] /api/users
 apiRouter.get('/users', async (req, res) => {
     try {
@@ -939,10 +1168,100 @@ apiRouter.post('/users/subadmin', async (req, res) => {
     }
 });
 
+// [PUT] /api/users/admin/:id - For an admin to update any user's profile
+apiRouter.put('/users/admin/:id', async (req, res) => {
+    const { id } = req.params; // user to edit
+    const { adminId, ...updateData } = req.body;
+
+    if (!adminId) {
+        return res.status(403).json({ message: 'Admin authentication is required.' });
+    }
+
+    let connection;
+    try {
+        connection = await dbPool.getConnection();
+        await connection.beginTransaction();
+
+        // --- Authorization Check ---
+        const [adminRows] = await connection.query('SELECT role FROM users WHERE id = ?', [adminId]);
+        if (adminRows.length === 0 || adminRows[0].role !== 'ADMIN') {
+            await connection.rollback();
+            return res.status(403).json({ message: 'Permission denied. This action is for administrators only.' });
+        }
+        
+        const { fullName, email, phone, gender, password, dob } = updateData;
+
+        // Dynamic query building
+        const fieldsToUpdate = { fullName, email, phone, gender, dob };
+        let sql = 'UPDATE users SET ';
+        const params = [];
+        
+        Object.keys(fieldsToUpdate).forEach((key) => {
+            if (fieldsToUpdate[key] !== undefined && fieldsToUpdate[key] !== null) {
+                if (params.length > 0) sql += ', ';
+                sql += `\`${key}\` = ?`;
+                params.push(fieldsToUpdate[key]);
+            }
+        });
+
+        if (password) {
+            if (params.length > 0) sql += ', ';
+            sql += '`password` = ?';
+            params.push(password);
+        }
+
+        if (params.length === 0) {
+            await connection.rollback();
+            return res.status(400).json({ message: 'No fields to update.' });
+        }
+
+        sql += ' WHERE id = ?';
+        params.push(id);
+        
+        const [result] = await connection.query(sql, params);
+        if (result.affectedRows === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'User to update not found.' });
+        }
+
+        // Sync phone number to govtbeneficiaries if changed
+        if (phone) {
+            await connection.query(
+                `UPDATE govtbeneficiaries gb
+                 JOIN users u ON gb.govtExamRegistrationNumber = u.govtExamRegistrationNumber
+                 SET gb.phone = ?
+                 WHERE u.id = ?`,
+                 [phone, id]
+            );
+        }
+
+        await connection.commit();
+        
+        // Fetch and return updated user
+        const [rows] = await connection.query('SELECT * FROM users WHERE id = ?', [id]);
+        if (rows.length === 0) {
+             return res.status(404).json({ message: 'User not found after update.' });
+        }
+        const { password: _, ...userToReturn } = rows[0];
+
+        res.status(200).json(userToReturn);
+
+    } catch (error) {
+        if(connection) await connection.rollback();
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'Email or phone number already in use by another account.' });
+        }
+        handleDBError(res, error, 'adminUpdateUser');
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+
 // [PUT] /api/users/subadmin/:id
 apiRouter.put('/users/subadmin/:id', async (req, res) => {
     const { id } = req.params;
-    const { fullName, email, phone, password, assignedDistricts } = req.body;
+    const { fullName, email, phone, password, gender, dob, assignedDistricts } = req.body;
 
     if (!fullName || !phone || !Array.isArray(assignedDistricts)) {
         return res.status(400).json({ message: 'Full name, phone, and assigned districts are required.' });
@@ -952,16 +1271,36 @@ apiRouter.put('/users/subadmin/:id', async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // Update user details. Handle optional password change.
+        // Build the user update query dynamically
+        const userFields = { fullName, email, phone, gender, dob };
+        const userUpdateParts = [];
+        const userParams = [];
+
+        for (const [key, value] of Object.entries(userFields)) {
+            if (value !== undefined) {
+                userUpdateParts.push(`\`${key}\` = ?`);
+                userParams.push(value);
+            }
+        }
         if (password) {
-            await connection.query(
-              'UPDATE users SET fullName = ?, email = ?, phone = ?, password = ? WHERE id = ?',
-              [fullName, email, phone, password, id]
-            );
-        } else {
-            await connection.query(
-              'UPDATE users SET fullName = ?, email = ?, phone = ? WHERE id = ?',
-              [fullName, email, phone, id]
+            userUpdateParts.push('`password` = ?');
+            userParams.push(password);
+        }
+        
+        if (userUpdateParts.length > 0) {
+            const userUpdateSql = `UPDATE users SET ${userUpdateParts.join(', ')} WHERE id = ?`;
+            userParams.push(id);
+            await connection.query(userUpdateSql, userParams);
+        }
+
+        // If phone number was changed, sync it to the govtbeneficiaries table
+        if (phone) {
+             await connection.query(
+                `UPDATE govtbeneficiaries gb
+                 JOIN users u ON gb.govtExamRegistrationNumber = u.govtExamRegistrationNumber
+                 SET gb.phone = ?
+                 WHERE u.id = ?`,
+                 [phone, id]
             );
         }
         
@@ -978,6 +1317,9 @@ apiRouter.put('/users/subadmin/:id', async (req, res) => {
         res.status(200).json({ message: 'Sub-admin updated successfully.' });
     } catch (error) {
         await connection.rollback();
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'Email or phone number already in use.' });
+        }
         handleDBError(res, error, 'updateSubAdmin');
     } finally {
         connection.release();

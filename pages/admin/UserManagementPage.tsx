@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
@@ -12,7 +13,7 @@ export const AdminUserManagementPage: React.FC = () => {
     const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isSubAdminModalOpen, setIsSubAdminModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const { user: loggedInUser } = useAuth();
 
@@ -47,16 +48,16 @@ export const AdminUserManagementPage: React.FC = () => {
 
     const handleOpenCreateModal = () => {
         setEditingUser(null);
-        setIsModalOpen(true);
+        setIsSubAdminModalOpen(true);
     };
     
-    const handleOpenEditModal = (user: User) => {
+    const handleOpenEditSubAdminModal = (user: User) => {
         setEditingUser(user);
-        setIsModalOpen(true);
+        setIsSubAdminModalOpen(true);
     };
     
-    const handleCloseModal = () => {
-        setIsModalOpen(false);
+    const handleCloseModals = () => {
+        setIsSubAdminModalOpen(false);
         setEditingUser(null);
     };
 
@@ -73,7 +74,7 @@ export const AdminUserManagementPage: React.FC = () => {
     };
     
     const handleSaveSuccess = () => {
-        handleCloseModal();
+        handleCloseModals();
         fetchUsers();
     };
 
@@ -143,9 +144,9 @@ export const AdminUserManagementPage: React.FC = () => {
                                             ) : 'N/A'}
                                         </td>
                                         <td>
-                                            {loggedInUser?.role === UserRole.ADMIN && user.role === UserRole.SUB_ADMIN && (
+                                            {(loggedInUser?.role === UserRole.ADMIN && user.role === UserRole.SUB_ADMIN) && (
                                                 <div className="user-management__actions">
-                                                    <Button variant="secondary" onClick={() => handleOpenEditModal(user)} className="user-management__action-btn">
+                                                    <Button variant="secondary" onClick={() => handleOpenEditSubAdminModal(user)} className="user-management__action-btn">
                                                         <Edit size={16} />
                                                     </Button>
                                                     <Button variant="danger" onClick={() => handleDeleteUser(user.id)} className="user-management__action-btn">
@@ -162,10 +163,10 @@ export const AdminUserManagementPage: React.FC = () => {
                 )}
             </Card>
 
-            {isModalOpen && (
+            {isSubAdminModalOpen && (
                 <SubAdminFormModal
-                    isOpen={isModalOpen}
-                    onClose={handleCloseModal}
+                    isOpen={isSubAdminModalOpen}
+                    onClose={handleCloseModals}
                     onSave={handleSaveSuccess}
                     userToEdit={editingUser}
                 />

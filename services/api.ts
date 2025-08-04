@@ -1,4 +1,6 @@
-import type { Schedule, User, BusLocation, UserBooking, RevenueAnalyticsData, ParsedSchedule, ParsedStop, SeatLayout } from '../types';
+
+
+import type { Schedule, User, BusLocation, UserBooking, RevenueAnalyticsData, ParsedSchedule, ParsedStop, SeatLayout, ParsedBeneficiary } from '../types';
 
 // This file now uses fetch() to communicate with a backend API.
 // The backend is not part of this project, but these functions are wired
@@ -64,6 +66,22 @@ export const api = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ phone, password: password_val }),
+        });
+    },
+
+    sendOtp: (phone: string): Promise<{ message: string, otp: string }> => { // Returning OTP for simulation
+        return apiFetch<{ message: string, otp: string }>(`${API_BASE_URL}/auth/send-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone }),
+        });
+    },
+
+    verifyOtp: (phone: string, otp: string): Promise<User | null> => {
+        return apiFetch<User | null>(`${API_BASE_URL}/auth/verify-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone, otp }),
         });
     },
 
@@ -133,12 +151,28 @@ export const api = {
     getUsers: (): Promise<User[]> => {
         return apiFetch<User[]>(`${API_BASE_URL}/users`);
     },
+
+    bulkCreateBeneficiaries: (beneficiaries: ParsedBeneficiary[], adminId: string): Promise<{ message: string, created: number, skipped: number }> => {
+        return apiFetch<{ message: string, created: number, skipped: number }>(`${API_BASE_URL}/users/bulk-beneficiaries`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ beneficiaries, adminId }),
+        });
+    },
     
     createSubAdmin: (data: Partial<User>): Promise<User> => {
         return apiFetch<User>(`${API_BASE_URL}/users/subadmin`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
+        });
+    },
+
+    adminUpdateUser: (userId: string, data: Partial<User>, adminId: string): Promise<User> => {
+        return apiFetch<User>(`${API_BASE_URL}/users/admin/${encodeURIComponent(userId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...data, adminId }),
         });
     },
 
@@ -153,6 +187,14 @@ export const api = {
     deleteUser: (userId: string): Promise<void> => {
         return apiFetch<void>(`${API_BASE_URL}/users/${encodeURIComponent(userId)}`, {
             method: 'DELETE',
+        });
+    },
+
+    updateUserProfile: (userId: string, data: Partial<User>): Promise<User> => {
+        return apiFetch<User>(`${API_BASE_URL}/users/profile/${encodeURIComponent(userId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
         });
     },
 

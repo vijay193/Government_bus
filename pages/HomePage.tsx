@@ -5,6 +5,7 @@ import { Button } from '../components/common/Button';
 import { ScheduleCard } from '../components/bus/ScheduleCard';
 import type { Schedule } from '../types';
 import { api } from '../services/api';
+import { useAuth } from '../hooks/useAuth';
 import { Search, Map, Route } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
@@ -17,6 +18,8 @@ export const HomePage: React.FC = () => {
   const [destination, setDestination] = useState('');
   const [district, setDistrict] = useState('');
   const [districts, setDistricts] = useState<string[]>([]);
+  
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchDistricts = async () => {
@@ -115,7 +118,7 @@ export const HomePage: React.FC = () => {
             </div>
         )}
         {error && <Card><p className="home-page__error">{error}</p></Card>}
-        {schedules.map(schedule => <ScheduleCard key={schedule.id} schedule={schedule} />)}
+        {schedules.map(schedule => <ScheduleCard key={schedule.id} schedule={schedule} userRole={user?.role} />)}
       </div>
     </div>
   );

@@ -4,6 +4,8 @@ import type { Schedule, UserRole } from '../../types';
 import { Card } from '../common/Card';
 import { Button } from '../common/Button';
 import { Clock, ArrowRight, MapPin, Users, IndianRupee, Edit } from 'lucide-react';
+import { UserRole as UserRoleEnum } from '../../types';
+
 
 interface ScheduleCardProps {
   schedule: Schedule;
@@ -14,6 +16,7 @@ interface ScheduleCardProps {
 
 export const ScheduleCard: React.FC<ScheduleCardProps> = ({ schedule, showBookingButton = true, onEdit, userRole }) => {
   const isSegmentSearch = schedule.userOrigin && schedule.userDestination;
+  const canBook = showBookingButton && (!userRole || userRole === UserRoleEnum.USER);
 
   return (
     <Card>
@@ -64,7 +67,7 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({ schedule, showBookin
                 <div className="btn__loader"><Edit size={16} /> Edit</div>
               </Button>
            )}
-          {showBookingButton && (
+          {canBook && (
             schedule.bookingEnabled ? (
               <Link 
                 to={`/book/${schedule.id}`} 

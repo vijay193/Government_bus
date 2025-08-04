@@ -1,6 +1,4 @@
 
-
-
 export enum UserRole {
     USER = 'USER',
     ADMIN = 'ADMIN',
@@ -13,10 +11,12 @@ export interface User {
     phone: string;
     email?: string;
     role: UserRole;
-    dob?: string;
     gender?: 'MALE' | 'FEMALE' | 'OTHER';
-    password?: string;
+    dob?: string;
+    password?: string | null; // Allow password to be null for OTP users
     assignedDistricts?: string[];
+    govtExamRegistrationNumber?: string;
+    isFreeTicketEligible?: boolean;
 }
 
 export type SeatLayout = '2x2' | '2x3' | '2x1';
@@ -128,4 +128,13 @@ export interface ParsedSchedule {
   seatLayout: SeatLayout;
   bookingEnabled: boolean;
   stops: ParsedStop[];
+}
+
+// --- Beneficiary Upload Types ---
+export interface ParsedBeneficiary {
+    govtExamRegistrationNumber: string;
+    phone: string;
+    fullName: string;
+    email?: string;
+    dob?: string;
 }

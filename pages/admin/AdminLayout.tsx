@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Settings, Users, DollarSign, UploadCloud, List } from 'lucide-react';
+import { LayoutDashboard, Settings, Users, DollarSign, UploadCloud, List, UserPlus } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { UserRole } from '../../types';
 
@@ -21,10 +22,16 @@ export const AdminLayout: React.FC = () => {
                             <span>Dashboard</span>
                         </NavLink>
                         {user?.role === UserRole.ADMIN && (
-                            <NavLink to="/admin/settings" className={getNavLinkClass}>
-                                <Settings size={20} />
-                                <span>Settings</span>
-                            </NavLink>
+                            <>
+                                <NavLink to="/admin/settings" className={getNavLinkClass}>
+                                    <Settings size={20} />
+                                    <span>Settings</span>
+                                </NavLink>
+                                <NavLink to="/admin/bulk-users" className={getNavLinkClass}>
+                                    <UserPlus size={20} />
+                                    <span>Bulk User Upload</span>
+                                </NavLink>
+                            </>
                         )}
                         <NavLink to="/admin/users" className={getNavLinkClass}>
                             <Users size={20} />

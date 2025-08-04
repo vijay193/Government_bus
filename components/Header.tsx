@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bus, UserCircle, LogOut, ShieldCheck, Ticket } from 'lucide-react';
+import { Bus, User as UserIcon, UserCircle, LogOut, ShieldCheck, Ticket } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from './common/Button';
 import { UserRole } from '../types';
@@ -23,22 +23,39 @@ export const Header: React.FC = () => {
             <span className="header__logo-text">Government <span className="header__logo-text-highlight">Bus</span></span>
           </Link>
           <nav className="header__nav">
-            <Link to="/" className="header__nav-link">Schedules</Link>
-            <Link to="/track" className="header__nav-link">Track Bus</Link>
+            {(!isAuthenticated || user?.role === UserRole.USER) && (
+              <>
+                <Link to="/" className="header__nav-link">Schedules</Link>
+                <Link to="/track" className="header__nav-link">Track Bus</Link>
+              </>
+            )}
             
             {isAuthenticated ? (
               <div className="header__user-actions">
                 {user?.role === UserRole.USER && (
-                  <Link to="/dashboard" className="header__nav-link">
-                    <Ticket size={18} />
-                    <span className="header__nav-link-text">My Bookings</span>
-                  </Link>
+                  <>
+                    <Link to="/dashboard" className="header__nav-link">
+                      <Ticket size={18} />
+                      <span className="header__nav-link-text">My Bookings</span>
+                    </Link>
+                    <Link to="/profile" className="header__nav-link">
+                        <UserIcon size={18} />
+                        <span className="header__nav-link-text">Profile</span>
+                    </Link>
+                  </>
                 )}
 
                 {(user?.role === UserRole.ADMIN || user?.role === UserRole.SUB_ADMIN) && (
-                  <Link to="/admin" className="header__nav-link">
-                    <ShieldCheck size={18} /> {user.role === UserRole.ADMIN ? 'Admin' : 'Management'}
-                  </Link>
+                  <>
+                    <Link to="/admin" className="header__nav-link">
+                      <ShieldCheck size={18} />
+                      <span className="header__nav-link-text">{user.role === UserRole.ADMIN ? 'Admin' : 'Management'}</span>
+                    </Link>
+                    <Link to="/profile" className="header__nav-link">
+                        <UserIcon size={18} />
+                        <span className="header__nav-link-text">Profile</span>
+                    </Link>
+                  </>
                 )}
                 
                 <div className="header__nav-separator" />

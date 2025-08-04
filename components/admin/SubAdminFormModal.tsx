@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { Input } from '../common/Input';
@@ -19,6 +20,8 @@ export const SubAdminFormModal: React.FC<SubAdminFormModalProps> = ({ isOpen, on
     email: '',
     phone: '',
     password: '',
+    gender: 'MALE' as 'MALE' | 'FEMALE' | 'OTHER',
+    dob: '',
   });
   const [assignedDistricts, setAssignedDistricts] = useState<string[]>([]);
   const [availableDistricts, setAvailableDistricts] = useState<string[]>([]);
@@ -44,15 +47,17 @@ export const SubAdminFormModal: React.FC<SubAdminFormModalProps> = ({ isOpen, on
         email: userToEdit.email || '',
         phone: userToEdit.phone,
         password: '', // Password is not pre-filled for security
+        gender: userToEdit.gender || 'MALE',
+        dob: userToEdit.dob ? new Date(userToEdit.dob).toISOString().split('T')[0] : '',
       });
       setAssignedDistricts(userToEdit.assignedDistricts || []);
     } else {
-      setFormData({ fullName: '', email: '', phone: '', password: '' });
+      setFormData({ fullName: '', email: '', phone: '', password: '', gender: 'MALE', dob: '' });
       setAssignedDistricts([]);
     }
   }, [userToEdit, isEditMode, isOpen]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
@@ -101,6 +106,17 @@ export const SubAdminFormModal: React.FC<SubAdminFormModalProps> = ({ isOpen, on
         <Input id="fullName" name="fullName" label="Full Name" value={formData.fullName} onChange={handleChange} required />
         <Input id="email" name="email" label="Email Address" type="email" value={formData.email} onChange={handleChange} required />
         <Input id="phone" name="phone" label="Phone Number" type="tel" value={formData.phone} onChange={handleChange} required />
+        <Input id="dob" name="dob" label="Date of Birth" type="date" value={formData.dob} onChange={handleChange} />
+        
+        <div className="input-wrapper">
+            <label htmlFor="gender" className="input-label">Gender</label>
+            <select id="gender" name="gender" value={formData.gender} onChange={handleChange} className="register-form__select">
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+              <option value="OTHER">Other</option>
+            </select>
+        </div>
+
         <Input id="password" name="password" label="Password" type="password" placeholder={isEditMode ? "Leave blank to keep unchanged" : ""} onChange={handleChange} required={!isEditMode} />
         
         <div className="input-wrapper">
