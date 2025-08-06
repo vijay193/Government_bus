@@ -1,5 +1,6 @@
 
 
+
 import type { Schedule, User, BusLocation, UserBooking, RevenueAnalyticsData, ParsedSchedule, ParsedStop, SeatLayout, ParsedBeneficiary } from '../types';
 
 // This file now uses fetch() to communicate with a backend API.
@@ -114,11 +115,29 @@ export const api = {
         return apiFetch<BusLocation | null>(`${API_BASE_URL}/tracking/${encodeURIComponent(busId)}`);
     },
 
-    bookSeats: (userId: string, scheduleId: string, seatIds: string[], origin: string, destination: string, farePerSeat: number): Promise<{ bookingId: string }> => {
+    bookSeats: (
+        userId: string, 
+        scheduleId: string, 
+        seatIds: string[], 
+        origin: string, 
+        destination: string, 
+        farePerSeat: number, 
+        discountType: 'NONE' | 'CHILD' | 'SENIOR', 
+        aadhaarNumber?: string
+    ): Promise<{ bookingId: string }> => {
         return apiFetch<{ bookingId: string }>(`${API_BASE_URL}/bookings`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, scheduleId, seatIds, origin, destination, farePerSeat }),
+            body: JSON.stringify({ 
+                userId, 
+                scheduleId, 
+                seatIds, 
+                origin, 
+                destination, 
+                farePerSeat,
+                discountType,
+                aadhaarNumber
+            }),
         });
     },
 
@@ -144,6 +163,19 @@ export const api = {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ key, value }),
+        });
+    },
+
+    // --- Discount Districts API ---
+    getDiscountedDistricts: (): Promise<string[]> => {
+        return apiFetch<string[]>(`${API_BASE_URL}/discounts/districts`);
+    },
+
+    updateDiscountedDistricts: (districts: string[]): Promise<void> => {
+        return apiFetch<void>(`${API_BASE_URL}/discounts/districts`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ districts }),
         });
     },
 

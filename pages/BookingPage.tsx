@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
@@ -11,9 +11,9 @@ import { Input } from '../components/common/Input';
 import { Card } from '../components/common/Card';
 import { Modal } from '../components/common/Modal';
 import { SEAT_PRICE } from '../constants';
-import { Ticket, X, CheckCircle, Ban, Gift, ArrowRight, Download } from 'lucide-react';
+import { Ticket, X, CheckCircle, Ban, Gift, ArrowRight, Download, Baby, Accessibility, ShieldAlert } from 'lucide-react';
 
-type BookingType = 'normal' | 'free';
+type BookingType = 'normal' | 'free' | 'child' | 'senior';
 
 interface ModalState {
   isOpen: boolean;
@@ -37,6 +37,7 @@ export const BookingPage: React.FC = () => {
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false, bookingId: '', bookingType: 'normal' });
   const [bookingType, setBookingType] = useState<BookingType>('normal');
   const [freeBookingDetails, setFreeBookingDetails] = useState({ registrationNumber: '', phone: '' });
+  const [aadhaarNumber, setAadhaarNumber] = useState('');
 
   useEffect(() => {
     if (!scheduleId) {
@@ -82,7 +83,16 @@ export const BookingPage: React.FC = () => {
   }, []);
 
   const pricePerSeat = Number(fareFromState ?? schedule?.fare ?? SEAT_PRICE);
-  const totalFare = selectedSeats.length * pricePerSeat;
+  
+  const discountMultiplier = useMemo(() => {
+    switch (bookingType) {
+        case 'child': return 0.6; // 40% discount
+        case 'senior': return 0.5; // 50% discount
+        default: return 1;
+    }
+  }, [bookingType]);
+
+  const totalFare = selectedSeats.length * pricePerSeat * discountMultiplier;
 
   const generatePdfReceipt = async (bookingId: string, type: BookingType) => {
     const doc = new jsPDF();
@@ -114,13 +124,16 @@ export const BookingPage: React.FC = () => {
     doc.setFontSize(8);
     doc.text("Scan for Verification", 147, 85);
 
-
-    if (type === 'free') {
-        doc.setFont("helvetica", "bold");
-        doc.text(`Total Fare: FREE (Govt. Special Announcement)`, 20, 85);
-    } else {
-        doc.setFont("helvetica", "bold");
-        doc.text(`Total Fare: INR ${totalFare.toFixed(2)}`, 20, 85);
+    doc.setFont("helvetica", "bold");
+    let fareText = `Total Fare: INR ${totalFare.toFixed(2)}`;
+    if (type === 'free') fareText = `Total Fare: FREE (Govt. Special Announcement)`;
+    if (type === 'child') fareText += ` (Child Discount 40%)`;
+    if (type === 'senior') fareText += ` (Senior Discount 50%)`;
+    doc.text(fareText, 20, 85);
+    
+    if (['child', 'senior'].includes(type)) {
+        doc.setFont("helvetica", "normal");
+        doc.text(`Aadhaar No: XXXX XXXX ${aadhaarNumber.slice(-4)}`, 20, 95);
     }
 
     doc.save(`GovernmentBus-Ticket-${bookingId}.pdf`);
@@ -149,13 +162,21 @@ export const BookingPage: React.FC = () => {
             );
             bookingId = res.bookingId;
         } else {
+            const discountTypeForApi = (bookingType === 'child' || bookingType === 'senior') 
+                ? bookingType.toUpperCase() as 'CHILD' | 'SENIOR' 
+                : 'NONE';
+            
+            const aadhaarForApi = (bookingType === 'child' || bookingType === 'senior') ? aadhaarNumber : undefined;
+
             const res = await api.bookSeats(
                 user.id, 
                 scheduleId, 
                 selectedSeats, 
                 userOrigin || schedule.origin, 
                 userDestination || schedule.destination,
-                pricePerSeat
+                pricePerSeat * discountMultiplier,
+                discountTypeForApi,
+                aadhaarForApi
             );
             bookingId = res.bookingId;
         }
@@ -178,6 +199,12 @@ export const BookingPage: React.FC = () => {
     setModalState({ isOpen: false, bookingId: '', bookingType: 'normal' });
     navigate('/');
   };
+
+  const isDiscountBooking = bookingType === 'child' || bookingType === 'senior';
+  const isConfirmButtonDisabled = selectedSeats.length === 0 || isBooking || 
+      (bookingType === 'free' && (!freeBookingDetails.registrationNumber || !freeBookingDetails.phone)) ||
+      (isDiscountBooking && aadhaarNumber.length !== 12);
+
 
   if (isLoading) return <div className="loader-overlay"><div className="page-loader"></div></div>;
   
@@ -212,14 +239,20 @@ export const BookingPage: React.FC = () => {
           <Card className="booking-page__summary-card">
             <h2 className="booking-page__summary-title">Booking Summary</h2>
             
-            {schedule.isFreeBookingEnabled && (
-                <div className="booking-page__booking-type-toggle">
-                    <button onClick={() => setBookingType('normal')} className={`booking-page__booking-type-btn ${bookingType === 'normal' ? 'booking-page__booking-type-btn--active-normal' : ''}`}>Normal Ticket</button>
-                    <button onClick={() => setBookingType('free')} className={`booking-page__booking-type-btn ${bookingType === 'free' ? 'booking-page__booking-type-btn--active-free' : ''}`}><Gift size={18}/> Free Ticket</button>
-                </div>
-            )}
+             <div className="booking-page__booking-type-toggle">
+                <button onClick={() => setBookingType('normal')} className={`booking-page__booking-type-btn ${bookingType === 'normal' ? 'booking-page__booking-type-btn--active-normal' : ''}`}>Normal</button>
+                {schedule.isDiscountEnabled && (
+                    <>
+                        <button onClick={() => setBookingType('child')} className={`booking-page__booking-type-btn ${bookingType === 'child' ? 'booking-page__booking-type-btn--active-child' : ''}`}><Baby size={18}/> Child</button>
+                        <button onClick={() => setBookingType('senior')} className={`booking-page__booking-type-btn ${bookingType === 'senior' ? 'booking-page__booking-type-btn--active-senior' : ''}`}><Accessibility size={18}/> Senior</button>
+                    </>
+                )}
+                {schedule.isFreeBookingEnabled && (
+                    <button onClick={() => setBookingType('free')} className={`booking-page__booking-type-btn ${bookingType === 'free' ? 'booking-page__booking-type-btn--active-free' : ''}`}><Gift size={18}/> Free</button>
+                )}
+            </div>
 
-            {bookingType === 'normal' ? (
+            {bookingType === 'normal' && (
                  <div className="booking-page__summary-details">
                     <div className="booking-page__summary-row">
                         <span className="booking-page__summary-label">Selected Seats:</span>
@@ -234,11 +267,44 @@ export const BookingPage: React.FC = () => {
                         <span className="booking-page__total-fare-value">₹{totalFare.toFixed(2)}</span>
                     </div>
                 </div>
-            ) : (
-                <div className="booking-page__free-form">
-                    <p className="booking-page__free-notice">Verify eligibility for a free ticket via special govt. announcement.</p>
+            )}
+
+            {bookingType === 'free' && (
+                <div className="booking-page__form-section">
+                    <p className="booking-page__info-notice notice-free">Verify eligibility for a free ticket via special govt. announcement.</p>
                     <Input id="registrationNumber" label="Registration Number" value={freeBookingDetails.registrationNumber} onChange={handleFreeBookingFormChange} required />
                     <Input id="phone" label="Registered Phone Number" type="tel" value={freeBookingDetails.phone} onChange={handleFreeBookingFormChange} required />
+                </div>
+            )}
+
+            {isDiscountBooking && (
+                <div className="booking-page__form-section">
+                     <p className={`booking-page__info-notice ${bookingType === 'child' ? 'notice-child' : 'notice-senior'}`}>
+                        <ShieldAlert size={18} />
+                        {bookingType === 'child' ? '40% discount applied for child ticket.' : '50% discount applied for senior citizen.'}
+                        <br />
+                        Aadhaar verification is required.
+                    </p>
+                    <Input 
+                        id="aadhaarNumber" 
+                        label="Enter 12-Digit Aadhaar Number" 
+                        type="tel" 
+                        value={aadhaarNumber} 
+                        onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, '').slice(0,12))} 
+                        required 
+                        maxLength={12}
+                        pattern="\d{12}"
+                    />
+                     <div className="booking-page__summary-details" style={{marginTop: '1rem'}}>
+                        <div className="booking-page__summary-row">
+                            <span className="booking-page__summary-label">Original Fare:</span>
+                            <span className="booking-page__summary-value" style={{textDecoration: 'line-through'}}>₹{(selectedSeats.length * pricePerSeat).toFixed(2)}</span>
+                        </div>
+                        <div className="booking-page__total-fare">
+                            <span className="booking-page__total-fare-label">Discounted Fare:</span>
+                            <span className="booking-page__total-fare-value">₹{totalFare.toFixed(2)}</span>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -246,11 +312,15 @@ export const BookingPage: React.FC = () => {
             
             <Button 
               onClick={handleConfirmBooking} 
-              disabled={selectedSeats.length === 0 || isBooking || (bookingType === 'free' && (!freeBookingDetails.registrationNumber || !freeBookingDetails.phone))}
+              disabled={isConfirmButtonDisabled}
               isLoading={isBooking}
-              className={`booking-page__confirm-btn ${bookingType === 'free' ? 'booking-page__confirm-btn--free' : ''}`}
+              className={`booking-page__confirm-btn 
+                ${bookingType === 'free' ? 'booking-page__confirm-btn--free' : ''}
+                ${bookingType === 'child' ? 'booking-page__confirm-btn--child' : ''}
+                ${bookingType === 'senior' ? 'booking-page__confirm-btn--senior' : ''}
+              `}
             >
-              {bookingType === 'free' ? <><Gift size={20} /> Verify & Book Free</> : <><Ticket size={20} /> Confirm Booking</>}
+              {isDiscountBooking ? <><ShieldAlert size={20} /> Verify & Book</> : (bookingType === 'free' ? <><Gift size={20} /> Verify & Book Free</> : <><Ticket size={20} /> Confirm Booking</>)}
             </Button>
           </Card>
         </div>

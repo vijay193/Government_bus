@@ -1,5 +1,6 @@
 
 
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -47,7 +48,7 @@ const handleDBError = (res, error, context) => {
  * Returns a map of key/value pairs, with boolean values.
  */
 const getSettings = async (connection) => {
-  const [rows] = await connection.query("SELECT `key`, `value` FROM settings WHERE `key` IN ('isBookingSystemOnline', 'isFreeBookingEnabled')");
+  const [rows] = await connection.query("SELECT `key`, `value` FROM settings WHERE `key` IN ('isBookingSystemOnline', 'isFreeBookingEnabled', 'isDiscountSystemEnabled')");
   return rows.reduce((acc, row) => {
     acc[row.key] = row.value === 'true';
     return acc;
@@ -73,10 +74,16 @@ const formatTime = (timeStr) => {
  * @returns {Promise<Object>} A map of schedule objects, keyed by schedule ID.
  */
 const fetchAndAssembleSchedules = async (connection, scheduleId = null) => {
-    const [settingsRows] = await connection.query("SELECT `key`, `value` FROM settings WHERE `key` IN ('isBookingSystemOnline', 'isFreeBookingEnabled')");
+    const [[settingsRows], [discountedDistrictRows]] = await Promise.all([
+        connection.query("SELECT `key`, `value` FROM settings WHERE `key` IN ('isBookingSystemOnline', 'isFreeBookingEnabled', 'isDiscountSystemEnabled')"),
+        connection.query("SELECT district_name FROM discounted_districts")
+    ]);
     const settings = settingsRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value === 'true' }), {});
+    const discountedDistricts = new Set(discountedDistrictRows.map(r => r.district_name));
+    
     const isSystemOnline = settings.isBookingSystemOnline || false;
     const isFreeBookingEnabled = settings.isFreeBookingEnabled || false;
+    const isDiscountSystemEnabled = settings.isDiscountSystemEnabled || false;
 
     const params = [];
     let scheduleFilter = '';
@@ -109,6 +116,7 @@ const fetchAndAssembleSchedules = async (connection, scheduleId = null) => {
                 seatLayout: row.seatLayout,
                 bookingEnabled: isSystemOnline && row.bookingEnabled === '1',
                 isFreeBookingEnabled: isSystemOnline && isFreeBookingEnabled && row.bookingEnabled === '1',
+                isDiscountEnabled: false, // will be set below
                 fare: 0,
                 stops: [],
             };
@@ -137,6 +145,7 @@ const fetchAndAssembleSchedules = async (connection, scheduleId = null) => {
 
         schedule.origin = validStops[0].name;
         schedule.departureTime = formatTime(validStops[0].departure) || 'N/A';
+        schedule.isDiscountEnabled = isDiscountSystemEnabled && discountedDistricts.has(schedule.origin);
 
         if (validStops.length > 1) {
             const lastStop = validStops[validStops.length - 1];
@@ -178,8 +187,7 @@ apiRouter.get('/districts', async (req, res) => {
         const [rows] = await dbPool.query( 
             `SELECT DISTINCT stopName 
              FROM routestops 
-             WHERE stopOrder = 0 
-               AND stopName IS NOT NULL 
+             WHERE stopName IS NOT NULL 
                AND TRIM(stopName) <> '' 
              ORDER BY stopName ASC`
         );
@@ -331,7 +339,7 @@ apiRouter.get('/settings/:key', async (req, res) => {
             res.json({ key: req.params.key, value: rows[0].value === 'true' });
         } else {
             // If setting doesn't exist, create it with a default of 'false'
-            if (req.params.key === 'isFreeBookingEnabled' || req.params.key === 'isBookingSystemOnline') {
+            if (['isFreeBookingEnabled', 'isBookingSystemOnline', 'isDiscountSystemEnabled'].includes(req.params.key)) {
                 await dbPool.query("INSERT INTO settings (`key`, `value`) VALUES (?, ?)", [req.params.key, 'false']);
                 res.json({ key: req.params.key, value: false });
             } else {
@@ -357,18 +365,55 @@ apiRouter.put('/settings', async (req, res) => {
 
     try {
         const [result] = await dbPool.query(
-            "UPDATE settings SET `value` = ? WHERE `key` = ?",
-            [booleanValue.toString(), key]
+            "INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = ?",
+            [key, booleanValue.toString(), booleanValue.toString()]
         );
-        
-        if (result.affectedRows === 0) {
-             // If no row was updated, it might not exist. Let's try inserting it.
-            await dbPool.query("INSERT INTO settings (`key`, `value`) VALUES (?, ?)", [key, booleanValue.toString()]);
-        }
         
         res.status(200).json({ message: 'Setting updated successfully.' });
     } catch (error) {
         handleDBError(res, error, 'updateSetting');
+    }
+});
+
+// --- Discount District Routes ---
+apiRouter.get('/discounts/districts', async (req, res) => {
+    try {
+        const [rows] = await dbPool.query('SELECT district_name FROM discounted_districts');
+        res.json(rows.map(r => r.district_name));
+    } catch (error) {
+        if (error.code === 'ER_NO_SUCH_TABLE') {
+             return res.json([]);
+        }
+        handleDBError(res, error, 'getDiscountedDistricts');
+    }
+});
+
+apiRouter.put('/discounts/districts', async (req, res) => {
+    const { districts } = req.body; // Expects an array of district names
+    if (!Array.isArray(districts)) {
+        return res.status(400).json({ message: 'Districts must be provided as an array.' });
+    }
+
+    const connection = await dbPool.getConnection();
+    try {
+        await connection.beginTransaction();
+        
+        // Clear all existing discounted districts
+        await connection.query('TRUNCATE TABLE discounted_districts');
+
+        // Insert the new list of discounted districts, if any
+        if (districts.length > 0) {
+            const values = districts.map(district => [district]);
+            await connection.query('INSERT INTO discounted_districts (district_name) VALUES ?', [values]);
+        }
+        
+        await connection.commit();
+        res.status(200).json({ message: 'Discount districts updated successfully.' });
+    } catch (error) {
+        await connection.rollback();
+        handleDBError(res, error, 'updateDiscountedDistricts');
+    } finally {
+        connection.release();
     }
 });
 
@@ -666,6 +711,7 @@ apiRouter.get('/schedules/route', async (req, res) => {
           seatLayout: schedule.seatLayout,
           bookingEnabled: isBookingOnline && schedule.bookingEnabled,
           isFreeBookingEnabled: schedule.isFreeBookingEnabled,
+          isDiscountEnabled: schedule.isDiscountEnabled,
           userOrigin: origin.trim(),
           userDestination: destination.trim(),
           fullRoute: `${fullRouteStart} to ${fullRouteEnd}`,
@@ -715,6 +761,7 @@ apiRouter.get('/schedules/district/:district', async (req, res) => {
         seatLayout: schedule.seatLayout,
         bookingEnabled: isBookingOnline && schedule.bookingEnabled,
         isFreeBookingEnabled: schedule.isFreeBookingEnabled,
+        isDiscountEnabled: schedule.isDiscountEnabled,
         fullRoute: `${firstStop.name} to ${lastStop?.name || 'Unknown'}`,
         departureTime: formatTime(firstStop.departure),
         arrivalTime: formatTime(lastStop?.arrival),
@@ -768,6 +815,8 @@ apiRouter.get('/bookings/user/:userId', async (req, res) => {
          b.bookingDate,
          b.origin,
          b.destination,
+         b.discountType,
+         b.aadhaarNumber,
          bs.seatId
        FROM bookings b
        LEFT JOIN bookedseats bs ON b.id = bs.bookingId
@@ -789,6 +838,8 @@ apiRouter.get('/bookings/user/:userId', async (req, res) => {
           bookingDate: row.bookingDate,
           origin: row.origin,
           destination: row.destination,
+          discountType: row.discountType,
+          aadhaarNumber: row.aadhaarNumber,
           seatIds: [],
         };
       }
@@ -899,10 +950,14 @@ apiRouter.post('/bookings/free', async (req, res) => {
 
 // [POST] /api/bookings
 apiRouter.post("/bookings", async (req, res) => {
-    const { userId, scheduleId, seatIds, origin, destination, farePerSeat } = req.body;
+    const { userId, scheduleId, seatIds, origin, destination, farePerSeat, discountType, aadhaarNumber } = req.body;
 
     if (!userId || !scheduleId || !Array.isArray(seatIds) || seatIds.length === 0 || !origin || !destination || typeof farePerSeat !== 'number') {
         return res.status(400).json({ message: 'Missing or invalid required booking information.' });
+    }
+    
+    if (discountType && discountType !== 'NONE' && (!aadhaarNumber || aadhaarNumber.length !== 12)) {
+        return res.status(400).json({ message: 'A valid 12-digit Aadhaar number is required for discounted tickets.' });
     }
 
     const connection = await dbPool.getConnection();
@@ -914,8 +969,8 @@ apiRouter.post("/bookings", async (req, res) => {
         const bookingDate = new Date();
 
         await connection.execute(
-            `INSERT INTO bookings (id, userId, scheduleId, fare, bookingDate, isFreeTicket, origin, destination) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [bookingId, userId, scheduleId, totalFare, bookingDate, false, origin, destination]
+            `INSERT INTO bookings (id, userId, scheduleId, fare, bookingDate, isFreeTicket, origin, destination, discountType, aadhaarNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [bookingId, userId, scheduleId, totalFare, bookingDate, false, origin, destination, discountType || 'NONE', aadhaarNumber || null]
         );
 
         const seatInsertPromises = seatIds.map(seatId =>

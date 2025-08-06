@@ -1,4 +1,5 @@
 
+
 export enum UserRole {
     USER = 'USER',
     ADMIN = 'ADMIN',
@@ -40,6 +41,7 @@ export interface Schedule {
     seatLayout: SeatLayout;
     bookingEnabled: boolean;
     isFreeBookingEnabled?: boolean;
+    isDiscountEnabled?: boolean; // New field for discounts
     fare: number;
     userOrigin?: string; // For search results on segments
     userDestination?: string; // For search results on segments
@@ -56,6 +58,8 @@ export interface Booking {
     seats: BookedSeat[];
     origin: string; // The user's boarding point
     destination: string; // The user's deboarding point
+    discountType: 'NONE' | 'CHILD' | 'SENIOR';
+    aadhaarNumber: string | null;
 }
 
 export interface UserBooking {
@@ -68,6 +72,8 @@ export interface UserBooking {
     origin: string;
     destination: string;
     seatIds: string[];
+    discountType: 'NONE' | 'CHILD' | 'SENIOR';
+    aadhaarNumber: string | null;
 }
 
 export interface BookedSeat {

@@ -7,7 +7,7 @@ import type { UserBooking, Schedule } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
-import { Download, QrCode, Calendar, IndianRupee, Star, Armchair } from 'lucide-react';
+import { Download, QrCode, Calendar, IndianRupee, Star, Armchair, Baby, Accessibility } from 'lucide-react';
 
 const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
     const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -30,6 +30,21 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
         fetchSchedule();
     }, [booking.id, booking.scheduleId]);
 
+    const getBookingTag = () => {
+        if (booking.isFreeTicket) {
+            return <span className="booking-detail-card__tag tag-free"><Star size={12}/> FREE TICKET</span>;
+        }
+        switch (booking.discountType) {
+            case 'CHILD':
+                return <span className="booking-detail-card__tag tag-child"><Baby size={12}/> CHILD DISCOUNT</span>;
+            case 'SENIOR':
+                return <span className="booking-detail-card__tag tag-senior"><Accessibility size={12}/> SENIOR DISCOUNT</span>;
+            default:
+                return null;
+        }
+    };
+
+
     const generateQrCode = async () => {
         if (!user || !schedule) return;
         const qrCodeData = JSON.stringify({
@@ -38,7 +53,7 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
             scheduleId: booking.scheduleId,
             seats: booking.seatIds || [],
             route: `${booking.origin} to ${booking.destination}`,
-            bookingType: booking.isFreeTicket ? 'free' : 'normal',
+            bookingType: booking.isFreeTicket ? 'free' : (booking.discountType?.toLowerCase() || 'normal'),
         });
         try {
             const url = await QRCode.toDataURL(qrCodeData, { errorCorrectionLevel: 'H', width: 256 });
@@ -74,7 +89,7 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
                 scheduleId: schedule.id,
                 seats: booking.seatIds || [],
                 route: `${booking.origin} to ${booking.destination}`,
-                bookingType: booking.isFreeTicket ? 'free' : 'normal',
+                bookingType: booking.isFreeTicket ? 'free' : (booking.discountType?.toLowerCase() || 'normal'),
             });
             const qrCodeDataURL = await QRCode.toDataURL(qrCodeData, { errorCorrectionLevel: 'H' });
             
@@ -83,10 +98,19 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
             doc.text("Scan for Verification", 147, 85);
 
             doc.setFont("helvetica", "bold");
+            let fareText = `Total Fare: INR ${Number(booking.fare || 0).toFixed(2)}`;
             if (booking.isFreeTicket) {
-                doc.text(`Total Fare: FREE (Govt. Special Announcement)`, 20, 85);
-            } else {
-                doc.text(`Total Fare: INR ${Number(booking.fare || 0).toFixed(2)}`, 20, 85);
+                fareText = `Total Fare: FREE (Govt. Special Announcement)`;
+            } else if (booking.discountType === 'CHILD') {
+                fareText += ` (Child Discount)`;
+            } else if (booking.discountType === 'SENIOR') {
+                fareText += ` (Senior Discount)`;
+            }
+            doc.text(fareText, 20, 85);
+            
+            if (booking.aadhaarNumber) {
+                doc.setFont("helvetica", "normal");
+                doc.text(`Aadhaar No: XXXX XXXX ${booking.aadhaarNumber.slice(-4)}`, 20, 95);
             }
 
             doc.save(`GovernmentBus-Ticket-${booking.id}.pdf`);
@@ -103,9 +127,7 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
                 <div className="booking-detail-card__info">
                     <div className="booking-detail-card__header">
                         <h3 className="booking-detail-card__route">{booking.origin} to {booking.destination}</h3>
-                        {booking.isFreeTicket && (
-                            <span className="booking-detail-card__free-tag"><Star size={12}/> FREE TICKET</span>
-                        )}
+                        {getBookingTag()}
                     </div>
                     <p className="booking-detail-card__bus-name">{schedule ? schedule.busName : 'Loading bus details...'}</p>
                     
