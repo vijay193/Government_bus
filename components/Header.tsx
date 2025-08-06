@@ -28,6 +28,20 @@ export const Header: React.FC = () => {
     };
   }, [dropdownRef]);
 
+  const getRoleClass = () => {
+    if (!user) return '';
+    switch (user.role) {
+      case UserRole.ADMIN:
+        return 'role-admin';
+      case UserRole.SUB_ADMIN:
+        return 'role-sub-admin';
+      case UserRole.USER:
+        return 'role-user';
+      default:
+        return '';
+    }
+  };
+
 
   return (
     <header className="header">
@@ -35,7 +49,7 @@ export const Header: React.FC = () => {
         <div className="header__content">
           <Link to="/" className="header__logo">
             <Bus className="header__logo-icon" />
-            <span className="header__logo-text">Government <span className="header__logo-text-highlight">Bus</span></span>
+            <span className="header__logo-text">Govt <span className="header__logo-text-highlight">Bus</span></span>
           </Link>
           <nav className="header__nav">
             {(!isAuthenticated || user?.role === UserRole.USER) && (
@@ -47,7 +61,7 @@ export const Header: React.FC = () => {
             
             {isAuthenticated ? (
               <div className="header__user-menu" ref={dropdownRef}>
-                <button className="header__user-menu-trigger" onClick={() => setIsDropdownOpen(!isDropdownOpen)}>
+                <button className={`header__user-menu-trigger ${getRoleClass()}`} onClick={() => setIsDropdownOpen(!isDropdownOpen)}>
                   <UserCircle className="icon" size={24} />
                   <span>{user?.fullName.split(' ')[0]}</span>
                   <ChevronDown size={16} className={`header__user-menu-chevron ${isDropdownOpen ? 'open' : ''}`} />
