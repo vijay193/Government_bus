@@ -6,7 +6,7 @@ import type { Schedule, User, BusLocation, UserBooking, RevenueAnalyticsData, Pa
 // The backend is not part of this project, but these functions are wired
 // to make calls to endpoints that a real backend would expose based on the provided schema.
 
-const API_BASE_URL = 'https://a750fed00ffc.ngrok-free.app/api'; // Using ngrok URL for AI Studio compatibility
+const API_BASE_URL = 'https://1640d9fbca6b.ngrok-free.app/api'; // Using ngrok URL for AI Studio compatibility
 
 const NGROK_HEADERS = {
   'ngrok-skip-browser-warning': 'true',

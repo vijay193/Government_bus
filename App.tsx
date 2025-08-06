@@ -22,7 +22,7 @@ import { AdminSettingsPage } from './pages/admin/SettingsPage';
 import { AdminUserManagementPage } from './pages/admin/UserManagementPage';
 import { RevenueAnalyticsPage } from './pages/admin/RevenueAnalyticsPage';
 import { UploadSchedulesPage } from './pages/admin/UploadSchedulesPage';
-import { ManageSchedulesPage } from './pages/admin/ManageSchedulesPage';
+import { ManageSchedulesPage } from './hooks/ManageSchedulesPage';
 import { BulkUserUploadPage } from './pages/admin/BulkUserUploadPage';
 
 

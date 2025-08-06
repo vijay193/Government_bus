@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bus, User as UserIcon, UserCircle, LogOut, ShieldCheck, Ticket } from 'lucide-react';
+import { Bus, User as UserIcon, UserCircle, LogOut, ShieldCheck, Ticket, ChevronDown } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from './common/Button';
 import { UserRole } from '../types';
@@ -8,11 +8,26 @@ import { UserRole } from '../types';
 export const Header: React.FC = () => {
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = () => {
     logout();
     navigate('/');
   };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [dropdownRef]);
+
 
   return (
     <header className="header">
@@ -31,47 +46,38 @@ export const Header: React.FC = () => {
             )}
             
             {isAuthenticated ? (
-              <div className="header__user-actions">
-                {user?.role === UserRole.USER && (
-                  <>
-                    <Link to="/dashboard" className="header__nav-link">
-                      <Ticket size={18} />
-                      <span className="header__nav-link-text">My Bookings</span>
-                    </Link>
-                    <Link to="/profile" className="header__nav-link">
-                        <UserIcon size={18} />
-                        <span className="header__nav-link-text">Profile</span>
-                    </Link>
-                  </>
-                )}
-
-                {(user?.role === UserRole.ADMIN || user?.role === UserRole.SUB_ADMIN) && (
-                  <>
-                    <Link to="/admin" className="header__nav-link">
-                      <ShieldCheck size={18} />
-                      <span className="header__nav-link-text">{user.role === UserRole.ADMIN ? 'Admin' : 'Management'}</span>
-                    </Link>
-                    <Link to="/profile" className="header__nav-link">
-                        <UserIcon size={18} />
-                        <span className="header__nav-link-text">Profile</span>
-                    </Link>
-                  </>
-                )}
+              <div className="header__user-menu" ref={dropdownRef}>
+                <button className="header__user-menu-trigger" onClick={() => setIsDropdownOpen(!isDropdownOpen)}>
+                  <UserCircle className="icon" size={24} />
+                  <span>{user?.fullName.split(' ')[0]}</span>
+                  <ChevronDown size={16} className={`header__user-menu-chevron ${isDropdownOpen ? 'open' : ''}`} />
+                </button>
                 
-                <div className="header__nav-separator" />
+                {isDropdownOpen && (
+                  <div className="header__user-menu-dropdown">
+                    {user?.role === UserRole.USER && (
+                      <Link to="/dashboard" className="header__dropdown-item" onClick={() => setIsDropdownOpen(false)}>
+                        <Ticket size={18} /> My Bookings
+                      </Link>
+                    )}
 
-                <div className="header__user-info">
-                    <span className="header__user-name">
-                      <UserCircle className="icon" />
-                      {user?.fullName.split(' ')[0]}
-                    </span>
-                    <Button onClick={handleLogout} variant="danger" className="header__logout-btn">
-                      <div className="btn__loader">
-                        <LogOut size={18} />
-                        <span className='header__logout-btn-text'>Logout</span>
-                      </div>
-                    </Button>
-                </div>
+                    {(user?.role === UserRole.ADMIN || user?.role === UserRole.SUB_ADMIN) && (
+                      <Link to="/admin" className="header__dropdown-item" onClick={() => setIsDropdownOpen(false)}>
+                        <ShieldCheck size={18} /> {user.role === UserRole.ADMIN ? 'Admin Panel' : 'Management'}
+                      </Link>
+                    )}
+
+                    <Link to="/profile" className="header__dropdown-item" onClick={() => setIsDropdownOpen(false)}>
+                      <UserIcon size={18} /> Profile
+                    </Link>
+
+                    <div className="header__dropdown-separator" />
+                    
+                    <button onClick={handleLogout} className="header__dropdown-item header__dropdown-item--logout">
+                      <LogOut size={18} /> Logout
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <Link to="/login">
