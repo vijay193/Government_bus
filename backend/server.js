@@ -914,7 +914,7 @@ apiRouter.post('/bookings/free', async (req, res) => {
 
 
         const seatInsertPromises = seatIds.map(seatId =>
-            connection.query('INSERT INTO bookedseats (bookingId, seatId) VALUES (?, ?)', [bookingId, seatId])
+            connection.query('INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)', [bookingId, seatId, origin, destination])
         );
         await Promise.all(seatInsertPromises);
         
@@ -974,7 +974,10 @@ apiRouter.post("/bookings", async (req, res) => {
         );
 
         const seatInsertPromises = seatIds.map(seatId =>
-            connection.execute(`INSERT INTO bookedseats (bookingId, seatId) VALUES (?, ?)`, [bookingId, seatId])
+            connection.execute(
+                `INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)`,
+                [bookingId, seatId, origin, destination]
+            )
         );
         await Promise.all(seatInsertPromises);
 
