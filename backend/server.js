@@ -1,9 +1,4 @@
 
-
-
-
-
-
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -337,14 +332,25 @@ apiRouter.post('/auth/verify-otp', async (req, res) => {
 // [GET] /api/settings/:key
 apiRouter.get('/settings/:key', async (req, res) => {
     try {
-        const [rows] = await dbPool.query("SELECT value FROM settings WHERE `key` = ?", [req.params.key]);
+        const { key } = req.params;
+        const [rows] = await dbPool.query("SELECT value FROM settings WHERE `key` = ?", [key]);
         if (rows.length > 0) {
-            res.json({ key: req.params.key, value: rows[0].value === 'true' });
+            res.json({ key: key, value: rows[0].value });
         } else {
-            // If setting doesn't exist, create it with a default of 'false'
-            if (['isFreeBookingEnabled', 'isBookingSystemOnline', 'isDiscountSystemEnabled', 'isPassCardSystemEnabled'].includes(req.params.key)) {
-                await dbPool.query("INSERT INTO settings (`key`, `value`) VALUES (?, ?)", [req.params.key, 'false']);
-                res.json({ key: req.params.key, value: false });
+            // If setting doesn't exist, create it with a default value
+            const defaultSettings = {
+                isFreeBookingEnabled: 'false',
+                isBookingSystemOnline: 'false',
+                isDiscountSystemEnabled: 'false',
+                isPassCardSystemEnabled: 'false',
+                childDiscountPercentage: '40',
+                seniorDiscountPercentage: '50'
+            };
+
+            if (key in defaultSettings) {
+                const defaultValue = defaultSettings[key];
+                await dbPool.query("INSERT INTO settings (`key`, `value`) VALUES (?, ?)", [key, defaultValue]);
+                res.json({ key: key, value: defaultValue });
             } else {
                 res.status(404).json({ message: 'Setting not found.' });
             }
@@ -357,19 +363,17 @@ apiRouter.get('/settings/:key', async (req, res) => {
 // [PUT] /api/settings
 apiRouter.put('/settings', async (req, res) => {
     const { key, value } = req.body;
-    // Loosen validation: check for presence, not just boolean type.
     if (!key || value === undefined || value === null) {
         return res.status(400).json({ message: 'A key and value are required.' });
     }
-
-    // Coerce the incoming value to a strict boolean, then to a string for the DB.
-    // This handles `true`, `"true"`, `false`, and `"false"`.
-    const booleanValue = String(value).toLowerCase() === 'true';
+    
+    // The value from the client is already a string via `String(value)`
+    const valueToStore = String(value);
 
     try {
-        const [result] = await dbPool.query(
+        await dbPool.query(
             "INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = ?",
-            [key, booleanValue.toString(), booleanValue.toString()]
+            [key, valueToStore, valueToStore]
         );
         
         res.status(200).json({ message: 'Setting updated successfully.' });
@@ -953,9 +957,9 @@ apiRouter.post('/bookings/free', async (req, res) => {
 
 // [POST] /api/bookings
 apiRouter.post("/bookings", async (req, res) => {
-    const { userId, scheduleId, seatIds, origin, destination, farePerSeat, discountType, aadhaarNumber } = req.body;
+    const { userId, scheduleId, seatIds, origin, destination, discountType, aadhaarNumber } = req.body;
 
-    if (!userId || !scheduleId || !Array.isArray(seatIds) || seatIds.length === 0 || !origin || !destination || typeof farePerSeat !== 'number') {
+    if (!userId || !scheduleId || !Array.isArray(seatIds) || seatIds.length === 0 || !origin || !destination) {
         return res.status(400).json({ message: 'Missing or invalid required booking information.' });
     }
     
@@ -967,10 +971,46 @@ apiRouter.post("/bookings", async (req, res) => {
     try {
         await connection.beginTransaction();
 
+        // Step 1: Fetch schedule to get base fare and check validity
+        const schedulesMap = await fetchAndAssembleSchedules(connection, scheduleId);
+        const schedule = schedulesMap[scheduleId];
+        if (!schedule) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Schedule not found.' });
+        }
+        
+        const originStop = schedule.fullRouteStops.find(s => s.normalizedName === origin.trim().toLowerCase());
+        const destStop = schedule.fullRouteStops.find(s => s.normalizedName === destination.trim().toLowerCase());
+
+        if (!originStop || !destStop || originStop.order >= destStop.order) {
+            await connection.rollback();
+            return res.status(400).json({ message: 'Invalid origin or destination for this route.' });
+        }
+        const baseFarePerSeat = destStop.fare - originStop.fare;
+
+        // Step 2: Fetch discount settings
+        const [[childDiscRow], [seniorDiscRow], [discountEnabledRow]] = await Promise.all([
+             connection.query("SELECT value FROM settings WHERE `key` = 'childDiscountPercentage'"),
+             connection.query("SELECT value FROM settings WHERE `key` = 'seniorDiscountPercentage'"),
+             connection.query("SELECT value FROM settings WHERE `key` = 'isDiscountSystemEnabled'")
+        ]);
+        
+        const childDiscount = Number(childDiscRow[0]?.value || '40');
+        const seniorDiscount = Number(seniorDiscRow[0]?.value || '50');
+        const isDiscountEnabled = discountEnabledRow[0]?.value === 'true';
+
+        // Step 3: Calculate final fare on the server
+        let finalFarePerSeat = baseFarePerSeat;
+        if (isDiscountEnabled && schedule.isDiscountEnabled && discountType !== 'NONE') {
+            const discountPercent = discountType === 'CHILD' ? childDiscount : seniorDiscount;
+            finalFarePerSeat = baseFarePerSeat * (1 - (discountPercent / 100));
+        }
+        
+        const totalFare = seatIds.length * finalFarePerSeat;
         const bookingId = uuidv4();
-        const totalFare = seatIds.length * farePerSeat;
         const bookingDate = new Date();
 
+        // Step 4: Insert booking with server-calculated fare
         await connection.execute(
             `INSERT INTO bookings (id, userId, scheduleId, fare, bookingDate, isFreeTicket, origin, destination, discountType, aadhaarNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [bookingId, userId, scheduleId, totalFare, bookingDate, false, origin, destination, discountType || 'NONE', aadhaarNumber || null]

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
@@ -38,6 +39,7 @@ export const BookingPage: React.FC = () => {
   const [bookingType, setBookingType] = useState<BookingType>('normal');
   const [freeBookingDetails, setFreeBookingDetails] = useState({ registrationNumber: '', phone: '' });
   const [aadhaarNumber, setAadhaarNumber] = useState('');
+  const [discounts, setDiscounts] = useState({ child: 40, senior: 50 });
 
   useEffect(() => {
     if (!scheduleId) {
@@ -73,7 +75,24 @@ export const BookingPage: React.FC = () => {
       }
     };
     
+    const fetchDiscounts = async () => {
+        try {
+           const [childRes, seniorRes] = await Promise.all([
+               api.getSetting('childDiscountPercentage'),
+               api.getSetting('seniorDiscountPercentage')
+           ]);
+           setDiscounts({
+               child: Number(childRes.value || 40),
+               senior: Number(seniorRes.value || 50)
+           });
+       } catch(e) {
+           console.error("Could not fetch discounts, using defaults.", e);
+           // Keep default discounts if API fails
+       }
+   }
+
     fetchBookingData();
+    fetchDiscounts();
   }, [scheduleId]);
 
   const handleSeatClick = useCallback((seatId: string) => {
@@ -86,11 +105,11 @@ export const BookingPage: React.FC = () => {
   
   const discountMultiplier = useMemo(() => {
     switch (bookingType) {
-        case 'child': return 0.6; // 40% discount
-        case 'senior': return 0.5; // 50% discount
+        case 'child': return 1 - (discounts.child / 100);
+        case 'senior': return 1 - (discounts.senior / 100);
         default: return 1;
     }
-  }, [bookingType]);
+  }, [bookingType, discounts]);
 
   const totalFare = selectedSeats.length * pricePerSeat * discountMultiplier;
 
@@ -127,8 +146,8 @@ export const BookingPage: React.FC = () => {
     doc.setFont("helvetica", "bold");
     let fareText = `Total Fare: INR ${totalFare.toFixed(2)}`;
     if (type === 'free') fareText = `Total Fare: FREE (Govt. Special Announcement)`;
-    if (type === 'child') fareText += ` (Child Discount 40%)`;
-    if (type === 'senior') fareText += ` (Senior Discount 50%)`;
+    if (type === 'child') fareText += ` (Child Discount ${discounts.child}%)`;
+    if (type === 'senior') fareText += ` (Senior Discount ${discounts.senior}%)`;
     doc.text(fareText, 20, 85);
     
     if (['child', 'senior'].includes(type)) {
@@ -174,7 +193,6 @@ export const BookingPage: React.FC = () => {
                 selectedSeats, 
                 userOrigin || schedule.origin, 
                 userDestination || schedule.destination,
-                pricePerSeat * discountMultiplier,
                 discountTypeForApi,
                 aadhaarForApi
             );
@@ -281,7 +299,7 @@ export const BookingPage: React.FC = () => {
                 <div className="booking-page__form-section">
                      <p className={`booking-page__info-notice ${bookingType === 'child' ? 'notice-child' : 'notice-senior'}`}>
                         <ShieldAlert size={18} />
-                        {bookingType === 'child' ? '40% discount applied for child ticket.' : '50% discount applied for senior citizen.'}
+                        {bookingType === 'child' ? `${discounts.child}% discount applied for child ticket.` : `${discounts.senior}% discount applied for senior citizen.`}
                         <br />
                         Aadhaar verification is required.
                     </p>

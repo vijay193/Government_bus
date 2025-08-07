@@ -4,6 +4,7 @@ import { Card } from '../../components/common/Card';
 import { api } from '../../services/api';
 import { Settings, AlertCircle, CheckCircle, Percent, MapPin, Save, Loader2, UserCog } from 'lucide-react';
 import { Button } from '../../components/common/Button';
+import { Input } from '../../components/common/Input';
 
 const ToggleSwitch = ({ enabled, onChange, disabled }: { enabled: boolean, onChange: (checked: boolean) => void, disabled?: boolean }) => {
     return (
@@ -28,8 +29,9 @@ const SettingToggle = ({ settingKey, title, description, onToggle }: { settingKe
                 setError(null);
                 setIsLoading(true);
                 const status = await api.getSetting(settingKey);
-                setIsEnabled(status.value);
-                if (onToggle) onToggle(status.value);
+                const isEnabledValue = status.value === 'true';
+                setIsEnabled(isEnabledValue);
+                if (onToggle) onToggle(isEnabledValue);
             } catch (err) {
                 setError('Failed to load setting. Please try again.');
             } finally {
@@ -83,6 +85,102 @@ const SettingToggle = ({ settingKey, title, description, onToggle }: { settingKe
                     <CheckCircle size={20} /> <p>{successMessage}</p>
                 </div>
             )}
+        </div>
+    );
+};
+
+const DiscountPercentageManager: React.FC = () => {
+    const [discounts, setDiscounts] = useState({ child: '40', senior: '50' });
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchDiscounts = async () => {
+            setIsLoading(true);
+            try {
+                const [childRes, seniorRes] = await Promise.all([
+                    api.getSetting('childDiscountPercentage'),
+                    api.getSetting('seniorDiscountPercentage')
+                ]);
+                setDiscounts({
+                    child: childRes.value ? String(childRes.value) : '40',
+                    senior: seniorRes.value ? String(seniorRes.value) : '50'
+                });
+            } catch (err) {
+                setError("Failed to load discount percentages.");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchDiscounts();
+    }, []);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        const numValue = Math.max(0, Math.min(100, Number(value)));
+        setDiscounts(prev => ({ ...prev, [name]: String(numValue) }));
+    };
+    
+    const handleSaveChanges = async () => {
+        setIsSaving(true);
+        setError(null);
+        setSuccess(null);
+        try {
+            await Promise.all([
+                api.updateSetting('childDiscountPercentage', Number(discounts.child)),
+                api.updateSetting('seniorDiscountPercentage', Number(discounts.senior))
+            ]);
+            setSuccess("Discount percentages updated successfully!");
+        } catch (err) {
+            setError("Failed to save changes. Please try again.");
+        } finally {
+            setIsSaving(false);
+            setTimeout(() => setSuccess(null), 3000);
+        }
+    }
+
+    if(isLoading) {
+        return <div className="setting-toggle"><div className="home-page__loader"><div className="btn__spinner"></div></div></div>;
+    }
+
+    return (
+        <div className="setting-toggle">
+            <h3 className="setting-toggle__title flex items-center gap-2"><Percent size={24}/> Discount Percentages</h3>
+            <p className="setting-toggle__description mb-4">Set the discount percentage for child and senior citizen tickets (0-100%).</p>
+            
+            {error && <p className="auth-form__error">{error}</p>}
+            {success && <p className="auth-form__success">{success}</p>}
+            
+            <div className="discount-manager__inputs">
+                <Input 
+                    id="child-discount" 
+                    label="Child Discount (%)" 
+                    name="child"
+                    type="number"
+                    value={discounts.child}
+                    onChange={handleChange}
+                    min="0"
+                    max="100"
+                />
+                 <Input 
+                    id="senior-discount" 
+                    label="Senior Discount (%)" 
+                    name="senior"
+                    type="number"
+                    value={discounts.senior}
+                    onChange={handleChange}
+                    min="0"
+                    max="100"
+                />
+            </div>
+            
+            <div className="flex justify-end items-center mt-4">
+                <Button onClick={handleSaveChanges} isLoading={isSaving}>
+                    <Save size={18} /> Save Percentages
+                </Button>
+            </div>
         </div>
     );
 };
@@ -232,10 +330,15 @@ export const AdminSettingsPage: React.FC = () => {
                         <SettingToggle 
                             settingKey="isDiscountSystemEnabled"
                             title="Fare Discount System"
-                            description="Enable discounts for children (40%) and seniors (50%)."
+                            description="Enable discounts for children and senior citizens."
                             onToggle={setIsDiscountSystemEnabled}
                         />
-                        {isDiscountSystemEnabled && <DiscountDistrictManager />}
+                        {isDiscountSystemEnabled && (
+                            <>
+                                <DiscountPercentageManager />
+                                <DiscountDistrictManager />
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

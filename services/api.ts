@@ -1,8 +1,4 @@
 
-
-
-
-
 import type { Schedule, User, BusLocation, UserBooking, RevenueAnalyticsData, ParsedSchedule, ParsedStop, SeatLayout, ParsedBeneficiary, PassCard } from '../types';
 
 // This file now uses fetch() to communicate with a backend API.
@@ -123,7 +119,6 @@ export const api = {
         seatIds: string[], 
         origin: string, 
         destination: string, 
-        farePerSeat: number, 
         discountType: 'NONE' | 'CHILD' | 'SENIOR', 
         aadhaarNumber?: string
     ): Promise<{ bookingId: string }> => {
@@ -135,8 +130,7 @@ export const api = {
                 scheduleId, 
                 seatIds, 
                 origin, 
-                destination, 
-                farePerSeat,
+                destination,
                 discountType,
                 aadhaarNumber
             }),
@@ -160,15 +154,15 @@ export const api = {
     },
     
     // --- Admin Settings ---
-    getSetting: (key: string): Promise<{ key: string, value: boolean }> => {
-        return apiFetch<{ key: string, value: boolean }>(`${API_BASE_URL}/settings/${key}`);
+    getSetting: (key: string): Promise<{ key: string, value: string }> => {
+        return apiFetch<{ key: string, value: string }>(`${API_BASE_URL}/settings/${key}`);
     },
 
-    updateSetting: (key: string, value: boolean): Promise<void> => {
+    updateSetting: (key: string, value: boolean | number | string): Promise<void> => {
         return apiFetch<void>(`${API_BASE_URL}/settings`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key, value }),
+            body: JSON.stringify({ key, value: String(value) }),
         });
     },
 
