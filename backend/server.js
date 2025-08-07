@@ -1,6 +1,9 @@
 
 
 
+
+
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -187,7 +190,8 @@ apiRouter.get('/districts', async (req, res) => {
         const [rows] = await dbPool.query( 
             `SELECT DISTINCT stopName 
              FROM routestops 
-             WHERE stopName IS NOT NULL 
+             WHERE stopOrder = 0 
+               AND stopName IS NOT NULL 
                AND TRIM(stopName) <> '' 
              ORDER BY stopName ASC`
         );
@@ -197,7 +201,6 @@ apiRouter.get('/districts', async (req, res) => {
         handleDBError(res, error, 'getDistricts');
     }
 });
-
 
 // [POST] /api/auth/register
 apiRouter.post('/auth/register', async (req, res) => {
@@ -339,7 +342,7 @@ apiRouter.get('/settings/:key', async (req, res) => {
             res.json({ key: req.params.key, value: rows[0].value === 'true' });
         } else {
             // If setting doesn't exist, create it with a default of 'false'
-            if (['isFreeBookingEnabled', 'isBookingSystemOnline', 'isDiscountSystemEnabled'].includes(req.params.key)) {
+            if (['isFreeBookingEnabled', 'isBookingSystemOnline', 'isDiscountSystemEnabled', 'isPassCardSystemEnabled'].includes(req.params.key)) {
                 await dbPool.query("INSERT INTO settings (`key`, `value`) VALUES (?, ?)", [req.params.key, 'false']);
                 res.json({ key: req.params.key, value: false });
             } else {
@@ -832,7 +835,7 @@ apiRouter.get('/bookings/user/:userId', async (req, res) => {
         bookingsMap[row.bookingId] = {
           id: row.bookingId,
           scheduleId: row.scheduleId,
-          fare: Number(row.fare) || 0,
+          fare: Number(row.fare || 0),
           isFreeTicket: row.isFreeTicket,
           govtExamRegistrationNumber: row.govtExamRegistrationNumber,
           bookingDate: row.bookingDate,
@@ -1009,7 +1012,64 @@ apiRouter.get('/tracking/:busId', async (req, res) => {
   });
 });
 
+
 // --- User Management Routes (Admin) ---
+
+// [GET] /api/users/:userId/pass-card
+apiRouter.get('/users/:userId/pass-card', async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+        // First, check if the system is enabled by the admin
+        const [[setting]] = await dbPool.query("SELECT value FROM settings WHERE `key` = 'isPassCardSystemEnabled'");
+        const isEnabled = setting && setting.value === 'true';
+        
+        if (!isEnabled) {
+            return res.json(null); // System is disabled, return nothing
+        }
+        
+        // System is enabled, try to find a pass card for the user and join with user details
+        const [rows] = await dbPool.query(
+            `SELECT
+                pc.id,
+                pc.userId,
+                pc.passCardNumber,
+                pc.userImage,
+                pc.fatherName,
+                pc.origin,
+                pc.destination,
+                pc.expiryDate,
+                u.fullName,
+                u.dob
+            FROM user_pass_cards pc
+            JOIN users u ON pc.userId = u.id
+            WHERE pc.userId = ?`,
+            [userId]
+        );
+        
+        if (rows.length > 0) {
+            const passCard = rows[0];
+            // Format dates to ISO string YYYY-MM-DD
+            if (passCard.expiryDate) {
+              passCard.expiryDate = new Date(passCard.expiryDate).toISOString().split('T')[0];
+            }
+             if (passCard.dob) {
+              passCard.dob = new Date(passCard.dob).toISOString().split('T')[0];
+            }
+            res.json(passCard);
+        } else {
+            res.json(null); // No pass card found for this user
+        }
+    } catch (error) {
+        // If the table doesn't exist yet, gracefully return null instead of throwing an error.
+        if (error.code === 'ER_NO_SUCH_TABLE') {
+             console.log("`user_pass_cards` table not found, returning null.");
+             return res.json(null);
+        }
+        handleDBError(res, error, 'getPassCardForUser');
+    }
+});
+
 
 // [PUT] /api/users/profile/:id - For a user to update their own profile
 apiRouter.put('/users/profile/:id', async (req, res) => {

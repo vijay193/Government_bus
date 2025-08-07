@@ -20,6 +20,19 @@ export interface User {
     isFreeTicketEligible?: boolean;
 }
 
+export interface PassCard {
+  id: number;
+  userId: string;
+  passCardNumber: string;
+  userImage: string; // base64 string
+  fatherName: string;
+  origin: string;
+  destination: string;
+  expiryDate: string; // ISO date string
+  fullName: string;
+  dob: string;
+}
+
 export type SeatLayout = '2x2' | '2x3' | '2x1';
 
 export interface RouteStop {

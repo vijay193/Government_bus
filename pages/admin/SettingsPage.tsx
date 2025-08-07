@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '../../components/common/Card';
 import { api } from '../../services/api';
-import { Settings, AlertCircle, CheckCircle, Percent, MapPin, Save, Loader2 } from 'lucide-react';
+import { Settings, AlertCircle, CheckCircle, Percent, MapPin, Save, Loader2, UserCog } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 
 const ToggleSwitch = ({ enabled, onChange, disabled }: { enabled: boolean, onChange: (checked: boolean) => void, disabled?: boolean }) => {
@@ -213,6 +214,18 @@ export const AdminSettingsPage: React.FC = () => {
                         />
                     </div>
                 </div>
+
+                <div className="admin-settings__section">
+                    <h3 className="admin-settings__section-title">User Features</h3>
+                    <div className="admin-settings__toggles-container">
+                        <SettingToggle 
+                            settingKey="isPassCardSystemEnabled"
+                            title="User Pass Card System"
+                            description="Enable digital pass cards. If enabled, users with a pass can view it in their dashboard."
+                        />
+                    </div>
+                </div>
+
                 <div className="admin-settings__section">
                     <h3 className="admin-settings__section-title">Fare Discounts</h3>
                     <div className="admin-settings__toggles-container">

@@ -1,7 +1,9 @@
 
 
 
-import type { Schedule, User, BusLocation, UserBooking, RevenueAnalyticsData, ParsedSchedule, ParsedStop, SeatLayout, ParsedBeneficiary } from '../types';
+
+
+import type { Schedule, User, BusLocation, UserBooking, RevenueAnalyticsData, ParsedSchedule, ParsedStop, SeatLayout, ParsedBeneficiary, PassCard } from '../types';
 
 // This file now uses fetch() to communicate with a backend API.
 // The backend is not part of this project, but these functions are wired
@@ -151,6 +153,10 @@ export const api = {
 
     getUserBookings: (userId: string): Promise<UserBooking[]> => {
         return apiFetch<UserBooking[]>(`${API_BASE_URL}/bookings/user/${encodeURIComponent(userId)}`);
+    },
+
+    getPassCardForUser: (userId: string): Promise<PassCard | null> => {
+        return apiFetch<PassCard | null>(`${API_BASE_URL}/users/${encodeURIComponent(userId)}/pass-card`);
     },
     
     // --- Admin Settings ---

@@ -1,5 +1,7 @@
 
 
+
+
 import React from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
@@ -17,6 +19,8 @@ import { UserDashboardPage } from './pages/UserDashboardPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { AdminLayout } from './pages/admin/AdminLayout';
+import { UserLayout } from './components/navigation/UserLayout';
+import { PassCardPage } from './pages/PassCardPage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 import { AdminSettingsPage } from './pages/admin/SettingsPage';
 import { AdminUserManagementPage } from './pages/admin/UserManagementPage';
@@ -45,10 +49,13 @@ const App: React.FC = () => {
                 path="/dashboard"
                 element={
                   <UserRoute>
-                    <UserDashboardPage />
+                    <UserLayout />
                   </UserRoute>
                 }
-              />
+              >
+                  <Route index element={<UserDashboardPage />} />
+                  <Route path="pass-card" element={<PassCardPage />} />
+              </Route>
               <Route
                 path="/profile"
                 element={
