@@ -537,7 +537,7 @@ apiRouter.post('/schedules/batch-upload', async (req, res) => {
             // Insert the main schedule record
             await connection.query(
                 'INSERT INTO schedules (id, busName, seatLayout, bookingEnabled) VALUES (?, ?, ?, ?)',
-                [String(schedule.busName), String(schedule.seatLayout), schedule.bookingEnabled ? '1' : '0']
+                [scheduleId, schedule.busName, schedule.seatLayout, schedule.bookingEnabled ? '1' : '0']
             );
 
             // Loop through each stop for the current schedule
@@ -552,7 +552,7 @@ apiRouter.post('/schedules/batch-upload', async (req, res) => {
                         scheduleId,           // scheduleId
                         stop.stopName,        // stopName
                         i,                    // stopOrder (using loop index for guaranteed sequence)
-                        stop.arrivalTime,     // arrivalTime
+                        stop.arrivalTime || null, // arrivalTime
                         stop.departureTime,   // departureTime
                         stop.fareFromOrigin   // fare
                     ]
