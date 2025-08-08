@@ -184,8 +184,8 @@ export const api = {
         return apiFetch<User[]>(`${API_BASE_URL}/users`);
     },
 
-    bulkCreateBeneficiaries: (beneficiaries: ParsedBeneficiary[], adminId: string): Promise<{ message: string, created: number, skipped: number }> => {
-        return apiFetch<{ message: string, created: number, skipped: number }>(`${API_BASE_URL}/users/bulk-beneficiaries`, {
+    bulkCreateBeneficiaries: (beneficiaries: ParsedBeneficiary[], adminId: string): Promise<{ message: string, created: number, updated: number, skipped: number }> => {
+        return apiFetch<{ message: string, created: number, updated: number, skipped: number }>(`${API_BASE_URL}/users/bulk-beneficiaries`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ beneficiaries, adminId }),

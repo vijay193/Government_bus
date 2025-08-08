@@ -156,4 +156,5 @@ export interface ParsedBeneficiary {
     fullName: string;
     email?: string;
     dob?: string;
+    password?: string;
 }

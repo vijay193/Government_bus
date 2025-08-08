@@ -1,20 +1,20 @@
 
+
 import React, { useState } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../services/api';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import type { ParsedBeneficiary } from '../../types';
-import { UserPlus, FileText, Bot, ListChecks, AlertTriangle, CheckCircle, FileUp, Download, UserCheck } from 'lucide-react';
+import { UserPlus, FileText, ListChecks, AlertTriangle, CheckCircle, FileUp, Download, UserCheck } from 'lucide-react';
 
-type UploadMode = 'text' | 'csv';
+type UploadMode = 'csv' | 'text';
 
 // Helper to download a CSV template for beneficiary upload
 const downloadCsvTemplate = () => {
-    const header = "govtExamRegistrationNumber,phone,fullName,email,dob\n";
-    const example1 = "EXAM12345,9876543210,Ramesh Kumar,ramesh@example.com,1998-05-20\n";
-    const example2 = "EXAM67890,1234567890,Sunita Sharma,sunita@example.com,2001-11-15\n";
+    const header = "govtExamRegistrationNumber,phone,fullName,email,dob,password\n";
+    const example1 = "EXAM12345,9876543210,Ramesh Kumar,ramesh@example.com,1998-05-20,pass123\n";
+    const example2 = "EXAM67890,1234567890,Sunita Sharma,sunita@example.com,2001-11-15,\n";
     const blob = new Blob([header, example1, example2], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
@@ -43,8 +43,44 @@ const BeneficiaryPreview: React.FC<{ beneficiaries: ParsedBeneficiary[] }> = ({ 
     </div>
 );
 
+const parseBeneficiaryData = (text: string): ParsedBeneficiary[] => {
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) throw new Error("Input must have a header and at least one data row.");
+    
+    const headers = lines[0].split(',').map(h => h.trim());
+    const requiredHeaders = ["govtExamRegistrationNumber", "phone", "fullName"];
+    if(!requiredHeaders.every(h => headers.includes(h))) {
+        throw new Error(`CSV is missing one of the required headers: ${requiredHeaders.join(', ')}`);
+    }
+    
+    const beneficiaries: ParsedBeneficiary[] = lines.slice(1).map(line => {
+        const values = line.split(',');
+        const row = headers.reduce((obj, header, index) => {
+            obj[header] = values[index]?.trim();
+            return obj;
+        }, {} as Record<string, string>);
+        
+        if (!row.govtExamRegistrationNumber || !row.phone || !row.fullName) {
+             console.warn("Skipping row with missing required fields:", row);
+            return null;
+        }
+
+        return {
+            govtExamRegistrationNumber: row.govtExamRegistrationNumber,
+            phone: row.phone,
+            fullName: row.fullName,
+            email: row.email || undefined,
+            dob: row.dob || undefined,
+            password: row.password || undefined,
+        };
+    }).filter(Boolean) as ParsedBeneficiary[];
+    
+    return beneficiaries;
+};
+
+
 export const BulkUserUploadPage: React.FC = () => {
-    const [mode, setMode] = useState<UploadMode>('text');
+    const [mode, setMode] = useState<UploadMode>('csv');
     const [textInput, setTextInput] = useState('');
     const [parsedBeneficiaries, setParsedBeneficiaries] = useState<ParsedBeneficiary[]>([]);
     
@@ -60,6 +96,10 @@ export const BulkUserUploadPage: React.FC = () => {
         setParsedBeneficiaries([]);
         setError(null);
         setSuccess(null);
+        const fileInput = document.getElementById('beneficiary-csv-upload') as HTMLInputElement;
+        if (fileInput) {
+            fileInput.value = '';
+        }
     };
 
     const handleModeChange = (newMode: UploadMode) => {
@@ -67,7 +107,7 @@ export const BulkUserUploadPage: React.FC = () => {
         clearState();
     };
 
-    const handleParseWithAI = async () => {
+    const handleParseFromText = () => {
         if (!textInput.trim()) {
             setError("Text input cannot be empty.");
             return;
@@ -78,32 +118,10 @@ export const BulkUserUploadPage: React.FC = () => {
         setParsedBeneficiaries([]);
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const beneficiarySchema = {
-                type: Type.OBJECT,
-                properties: {
-                    govtExamRegistrationNumber: { type: Type.STRING },
-                    phone: { type: Type.STRING },
-                    fullName: { type: Type.STRING },
-                    email: { type: Type.STRING, description: "Optional: The user's email address." },
-                    dob: { type: Type.STRING, description: "Optional: The user's date of birth in YYYY-MM-DD format." }
-                },
-                required: ['govtExamRegistrationNumber', 'phone', 'fullName']
-            };
-            
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: `Parse the following beneficiary information into a structured JSON array. Each object must contain 'govtExamRegistrationNumber', 'phone', and 'fullName'. The 'email' and 'dob' fields are optional. Text: \n\n${textInput}`,
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: { type: Type.ARRAY, items: beneficiarySchema },
-                }
-            });
-
-            const result = JSON.parse(response.text);
-            setParsedBeneficiaries(result);
+            const beneficiaries = parseBeneficiaryData(textInput);
+            setParsedBeneficiaries(beneficiaries);
         } catch (err) {
-            setError(`AI parsing failed. Please check the text format or try again. Error: ${err instanceof Error ? err.message : String(err)}`);
+            setError(`Text parsing failed: ${err instanceof Error ? err.message : String(err)}`);
         } finally {
             setIsLoading(false);
         }
@@ -119,31 +137,7 @@ export const BulkUserUploadPage: React.FC = () => {
         reader.onload = (e) => {
             try {
                 const text = e.target?.result as string;
-                const lines = text.trim().split(/\r?\n/);
-                if (lines.length < 2) throw new Error("CSV must have a header and at least one data row.");
-                
-                const headers = lines[0].split(',').map(h => h.trim());
-                const requiredHeaders = ["govtExamRegistrationNumber", "phone", "fullName"];
-                if(!requiredHeaders.every(h => headers.includes(h))) {
-                    throw new Error(`CSV is missing one of the required headers: ${requiredHeaders.join(', ')}`);
-                }
-                
-                const beneficiaries: ParsedBeneficiary[] = lines.slice(1).map(line => {
-                    const values = line.split(',');
-                    const row = headers.reduce((obj, header, index) => {
-                        obj[header] = values[index]?.trim();
-                        return obj;
-                    }, {} as Record<string, string>);
-                    
-                    return {
-                        govtExamRegistrationNumber: row.govtExamRegistrationNumber,
-                        phone: row.phone,
-                        fullName: row.fullName,
-                        email: row.email || undefined,
-                        dob: row.dob || undefined,
-                    };
-                });
-                
+                const beneficiaries = parseBeneficiaryData(text);
                 setParsedBeneficiaries(beneficiaries);
             } catch (err) {
                 setError(`CSV parsing failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -161,7 +155,7 @@ export const BulkUserUploadPage: React.FC = () => {
         setSuccess(null);
         try {
             const response = await api.bulkCreateBeneficiaries(parsedBeneficiaries, user.id);
-            setSuccess(`${response.message} Created: ${response.created}, Skipped: ${response.skipped}.`);
+            setSuccess(`${response.message} Created: ${response.created}, Updated: ${response.updated}, Skipped: ${response.skipped}.`);
             setParsedBeneficiaries([]);
             setTextInput('');
         } catch (err) {
@@ -177,17 +171,24 @@ export const BulkUserUploadPage: React.FC = () => {
             <p className="admin-page-header__subtitle">Create multiple password-less user accounts for beneficiaries. These users will log in using an OTP sent to their phone.</p>
             
             <div className="upload-schedules__tabs">
-                <button onClick={() => handleModeChange('text')} className={`upload-schedules__tab-btn ${mode === 'text' ? 'upload-schedules__tab-btn--active' : ''}`}><Bot size={20}/> AI Text Parser</button>
-                <button onClick={() => handleModeChange('csv')} className={`upload-schedules__tab-btn ${mode === 'csv' ? 'upload-schedules__tab-btn--active' : ''}`}><FileText size={20}/> CSV Upload</button>
+                <button onClick={() => handleModeChange('csv')} className={`upload-schedules__tab-btn ${mode === 'csv' ? 'upload-schedules__tab-btn--active' : ''}`}><FileUp size={20}/> CSV Upload</button>
+                <button onClick={() => handleModeChange('text')} className={`upload-schedules__tab-btn ${mode === 'text' ? 'upload-schedules__tab-btn--active' : ''}`}><FileText size={20}/> Paste Text</button>
             </div>
             
             <div className="upload-schedules__content">
                 {mode === 'text' ? (
                     <div>
-                        <label htmlFor="beneficiaryText" className="input-label">Paste beneficiary details below:</label>
-                        <textarea id="beneficiaryText" rows={10} value={textInput} onChange={e => setTextInput(e.target.value)} className="upload-schedules__textarea" placeholder="e.g., Name: Geeta Rani, Phone: 9988776655, Reg No: EXAM001. Name: Ajay Singh, Phone: 9988776644, Reg No: EXAM002, DOB: 1999-01-15"></textarea>
-                        <Button onClick={handleParseWithAI} isLoading={isLoading} style={{marginTop: '1rem'}}>
-                            <Bot /> Parse with AI
+                        <label htmlFor="beneficiaryText" className="input-label">Paste beneficiary data below (must include header row):</label>
+                        <textarea 
+                            id="beneficiaryText" 
+                            rows={10} 
+                            value={textInput} 
+                            onChange={e => setTextInput(e.target.value)} 
+                            className="upload-schedules__textarea" 
+                            placeholder={"govtExamRegistrationNumber,phone,fullName,email,dob,password\nEXAM12345,9876543210,Ramesh Kumar,ramesh@example.com,1998-05-20,strongPassword123"}
+                        />
+                        <Button onClick={handleParseFromText} isLoading={isLoading} style={{marginTop: '1rem'}}>
+                            Parse Text
                         </Button>
                     </div>
                 ) : (
@@ -199,7 +200,7 @@ export const BulkUserUploadPage: React.FC = () => {
                             </Button>
                             <label>
                                 <span style={{display: 'none'}}>Choose file</span>
-                                <input type="file" onChange={handleFileUpload} accept=".csv" className="upload-schedules__file-input"/>
+                                <input id="beneficiary-csv-upload" type="file" onChange={handleFileUpload} accept=".csv" className="upload-schedules__file-input"/>
                             </label>
                         </div>
                     </div>
@@ -226,7 +227,7 @@ export const BulkUserUploadPage: React.FC = () => {
                     <div className="upload-schedules__submit-actions">
                         <Button variant="secondary" onClick={clearState} disabled={isSubmitting}>Clear</Button>
                         <Button onClick={handleSubmitToBackend} isLoading={isSubmitting}>
-                            <UserCheck size={18} /> Create {parsedBeneficiaries.length} User Account(s)
+                            <UserCheck size={18} /> Create/Update {parsedBeneficiaries.length} User Account(s)
                         </Button>
                     </div>
                 </>

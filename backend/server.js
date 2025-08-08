@@ -1184,7 +1184,7 @@ apiRouter.put('/users/profile/:id', async (req, res) => {
     }
 });
 
-// [POST] /api/users/bulk-beneficiaries - For an admin to create multiple beneficiary users
+// [POST] /api/users/bulk-beneficiaries
 apiRouter.post('/users/bulk-beneficiaries', async (req, res) => {
     const { beneficiaries, adminId } = req.body;
     
@@ -1197,7 +1197,6 @@ apiRouter.post('/users/bulk-beneficiaries', async (req, res) => {
 
     const connection = await dbPool.getConnection();
     try {
-        // --- Authorization Check ---
         const [adminRows] = await connection.query('SELECT role FROM users WHERE id = ?', [adminId]);
         if (adminRows.length === 0 || adminRows[0].role !== 'ADMIN') {
             connection.release();
@@ -1207,46 +1206,97 @@ apiRouter.post('/users/bulk-beneficiaries', async (req, res) => {
         await connection.beginTransaction();
 
         let createdCount = 0;
+        let updatedCount = 0;
         let skippedCount = 0;
         
         for (const bene of beneficiaries) {
-            const { govtExamRegistrationNumber, phone, fullName, email, dob } = bene;
+            const { govtExamRegistrationNumber, phone, fullName, email, dob, password } = bene;
 
-            // Basic validation for each record
             if (!govtExamRegistrationNumber || !phone || !fullName) {
-                console.log('Skipping invalid record:', bene);
+                console.log('Skipping invalid record (missing required fields):', bene);
                 skippedCount++;
                 continue;
             }
 
-            // Check if user already exists
-            const [existingUser] = await connection.query('SELECT id FROM users WHERE phone = ? OR govtExamRegistrationNumber = ?', [phone, govtExamRegistrationNumber]);
-            if (existingUser.length > 0) {
-                console.log(`Skipping existing user: phone=${phone}, regNo=${govtExamRegistrationNumber}`);
-                skippedCount++;
-                continue;
-            }
-            
-            const userId = uuidv4();
-            // Insert into users table with NULL password
+            // --- Step 1: Upsert into `govtbeneficiaries` parent table FIRST ---
+            // This ensures the foreign key constraint is met before touching the `users` table.
+            // ticketClaimed is reset to 0 to allow re-booking if needed in a new scheme.
             await connection.query(
-                `INSERT INTO users (id, fullName, email, phone, password, role, govtExamRegistrationNumber, isFreeTicketEligible, dob) VALUES (?, ?, ?, ?, NULL, 'USER', ?, 1, ?)`,
-                [userId, fullName, email || null, phone, govtExamRegistrationNumber, dob || null]
-            );
-
-            // Insert into govtbeneficiaries table, or update if it exists
-            await connection.query(
-                `INSERT INTO govtbeneficiaries (id, govtExamRegistrationNumber, phone, ticketClaimed) VALUES (?, ?, ?, 0) ON DUPLICATE KEY UPDATE phone = VALUES(phone)`,
+                `INSERT INTO govtbeneficiaries (id, govtExamRegistrationNumber, phone, ticketClaimed) VALUES (?, ?, ?, 0)
+                 ON DUPLICATE KEY UPDATE phone = VALUES(phone), ticketClaimed = 0`,
                 [uuidv4(), govtExamRegistrationNumber, phone]
             );
+            
+            // --- Step 2: Handle the corresponding record in the `users` table ---
+            
+            // Check if a user is already linked to this beneficiary registration number
+            const [existingBeneUsers] = await connection.query('SELECT * FROM users WHERE govtExamRegistrationNumber = ?', [govtExamRegistrationNumber]);
 
-            createdCount++;
+            if (existingBeneUsers.length > 0) {
+                // --- UPDATE PATH: User is already a known beneficiary ---
+                const userToUpdate = existingBeneUsers[0];
+                
+                // If phone is changing, check for conflicts with other users
+                if (userToUpdate.phone !== phone) {
+                    const [phoneConflict] = await connection.query('SELECT id FROM users WHERE phone = ? AND id != ?', [phone, userToUpdate.id]);
+                    if (phoneConflict.length > 0) {
+                        console.log(`Skipping update for ${govtExamRegistrationNumber}: New phone number ${phone} is already in use by another account.`);
+                        skippedCount++;
+                        continue;
+                    }
+                }
+                
+                // No conflicts, proceed with update.
+                await connection.query(
+                    `UPDATE users SET fullName = ?, email = ?, phone = ?, dob = ?, isFreeTicketEligible = 'Yes', password = ? WHERE id = ?`,
+                    [fullName, email || null, phone, dob || null, password || null, userToUpdate.id]
+                );
+                updatedCount++;
+
+            } else {
+                // --- CREATE/CONVERT PATH: No user is linked to this beneficiary number yet ---
+                
+                // Check if the phone number is already registered to a different user account.
+                const [usersWithPhone] = await connection.query('SELECT * FROM users WHERE phone = ?', [phone]);
+                
+                if (usersWithPhone.length > 0) {
+                    // --- CONVERT PATH ---
+                    // A user exists with this phone, but is not yet linked to this registration number.
+                    // We will update their account to become this beneficiary.
+                    const userToConvert = usersWithPhone[0];
+                    
+                    // Check if the existing user is already a beneficiary under a DIFFERENT registration number.
+                    if (userToConvert.govtExamRegistrationNumber) {
+                         console.log(`Skipping conversion for phone ${phone}: This phone number is already linked to a different beneficiary (${userToConvert.govtExamRegistrationNumber}).`);
+                         skippedCount++;
+                         continue;
+                    }
+
+                    console.log(`Found existing user with phone ${phone}. Converting to beneficiary ${govtExamRegistrationNumber}.`);
+                    await connection.query(
+                        `UPDATE users SET fullName = ?, email = ?, dob = ?, isFreeTicketEligible = 'Yes', govtExamRegistrationNumber = ?, password = ? WHERE id = ?`,
+                        [fullName, email || null, dob || null, govtExamRegistrationNumber, password || null, userToConvert.id]
+                    );
+                    updatedCount++;
+                } else {
+                    // --- CREATE NEW USER PATH ---
+                    // Both registration number and phone are new. Create a fresh user record.
+                    const userId = uuidv4();
+                    await connection.query(
+                        `INSERT INTO users (id, fullName, email, phone, password, role, govtExamRegistrationNumber, isFreeTicketEligible, dob)
+                         VALUES (?, ?, ?, ?, ?, 'USER', ?, 'Yes', ?)`,
+                        [userId, fullName, email || null, phone, password || null, govtExamRegistrationNumber, dob || null]
+                    );
+                    createdCount++;
+                }
+            }
         }
 
         await connection.commit();
         res.status(201).json({ 
-            message: 'Bulk user creation process completed.',
+            message: 'Bulk user processing completed.',
             created: createdCount,
+            updated: updatedCount,
             skipped: skippedCount
         });
 
