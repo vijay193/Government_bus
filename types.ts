@@ -1,6 +1,7 @@
 
 
 
+
 export enum UserRole {
     USER = 'USER',
     ADMIN = 'ADMIN',
@@ -63,6 +64,13 @@ export interface Schedule {
     fullRouteStops?: RouteStop[]; // Detailed stops for editing
 }
 
+export interface PassengerDetail {
+    seatId: string;
+    fullName: string;
+    aadhaarNumber: string;
+    type: 'CHILD' | 'SENIOR';
+}
+
 export interface Booking {
     id: string;
     userId: string;
@@ -73,7 +81,8 @@ export interface Booking {
     origin: string; // The user's boarding point
     destination: string; // The user's deboarding point
     discountType: 'NONE' | 'CHILD' | 'SENIOR' | 'MIXED';
-    aadhaarNumber: string | null;
+    aadhaarNumber: string | null; // Kept for legacy data, new bookings use passengerDetails
+    passengerDetails?: PassengerDetail[];
 }
 
 export interface UserBooking {
@@ -87,7 +96,7 @@ export interface UserBooking {
     destination: string;
     seatIds: string[];
     discountType: 'NONE' | 'CHILD' | 'SENIOR' | 'MIXED';
-    aadhaarNumber: string | null;
+    passengerDetails?: PassengerDetail[];
 }
 
 export interface BookedSeat {
@@ -186,5 +195,6 @@ export interface ParsedCommand {
 export interface SeatBookingInfo {
     seatId: string;
     type: 'NORMAL' | 'CHILD' | 'SENIOR';
+    fullName?: string;
     aadhaarNumber?: string;
 }

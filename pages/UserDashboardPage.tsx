@@ -15,21 +15,84 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
     const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
     const [isDownloading, setIsDownloading] = useState(false);
     const [schedule, setSchedule] = useState<Schedule | null>(null);
+    const [discounts, setDiscounts] = useState<{child: number, senior: number}>({child: 40, senior: 50});
     const { user } = useAuth();
 
-    useEffect(() => {
-        const fetchSchedule = async () => {
-            if (booking.scheduleId) {
-                try {
-                    const scheduleData = await api.getScheduleById(booking.scheduleId);
-                    setSchedule(scheduleData);
-                } catch (error) {
-                    console.error(`Failed to fetch schedule details for booking ${booking.id}:`, error);
+    const getQrPayload = () => {
+        if (!user || !schedule || !schedule.fullRouteStops || !discounts) return null;
+
+        const formatTime = (timeStr?: string | null) => timeStr ? timeStr.substring(0, 5) : 'N/A';
+
+        const originStop = schedule.fullRouteStops.find(s => s.name === booking.origin);
+        const destStop = schedule.fullRouteStops.find(s => s.name === booking.destination);
+        const departureTime = formatTime(originStop?.departure);
+        const arrivalTime = formatTime(destStop?.arrival);
+        
+        const segmentFare = (destStop?.fare || 0) - (originStop?.fare || 0);
+        const childFare = segmentFare * (1 - (discounts.child / 100));
+        const seniorFare = segmentFare * (1 - (discounts.senior / 100));
+
+        const seniorSeatsCount = booking.passengerDetails?.filter(p => p.type === 'SENIOR').length || 0;
+        const childSeatsCount = booking.passengerDetails?.filter(p => p.type === 'CHILD').length || 0;
+        const normalSeatsCount = (booking.seatIds?.length || 0) - seniorSeatsCount - childSeatsCount;
+
+        // Mask Aadhaar for QR code
+        const discountedPassengers = booking.passengerDetails?.map(p => ({
+            ...p,
+            aadhaarNumber: `...${p.aadhaarNumber.slice(-4)}`
+        }));
+        
+        return {
+            bookingId: booking.id,
+            passengerName: user.fullName,
+            busName: schedule.busName,
+            scheduleId: booking.scheduleId,
+            route: {
+                origin: booking.origin,
+                destination: booking.destination,
+            },
+            timings: {
+                departure: `Departure from ${booking.origin}: ${departureTime}`,
+                arrival: `Arrival at ${booking.destination}: ${arrivalTime}`,
+            },
+            seats: booking.seatIds || [],
+            fare: {
+                total: Number(booking.fare || 0).toFixed(2),
+                summary: {
+                    normal: { count: normalSeatsCount, price: segmentFare.toFixed(2) },
+                    child: { count: childSeatsCount, price: childFare.toFixed(2) },
+                    senior: { count: seniorSeatsCount, price: seniorFare.toFixed(2) }
                 }
+            },
+            bookingType: booking.isFreeTicket ? 'free' : (booking.discountType?.toLowerCase() || 'normal'),
+            bookingDate: booking.bookingDate,
+            discountedPassengers: discountedPassengers || [],
+        };
+    };
+
+    useEffect(() => {
+        const fetchDetails = async () => {
+            if (!booking.scheduleId) return;
+            try {
+                const scheduleData = await api.getScheduleById(booking.scheduleId);
+                setSchedule(scheduleData);
+                
+                if (booking.discountType !== 'NONE' && scheduleData?.isDiscountEnabled) {
+                    const [childRes, seniorRes] = await Promise.all([
+                        api.getSetting('childDiscountPercentage'),
+                        api.getSetting('seniorDiscountPercentage')
+                    ]);
+                    setDiscounts({
+                        child: Number(childRes.value || 40),
+                        senior: Number(seniorRes.value || 50)
+                    });
+                }
+            } catch (error) {
+                console.error(`Failed to fetch schedule details for booking ${booking.id}:`, error);
             }
         };
-        fetchSchedule();
-    }, [booking.id, booking.scheduleId]);
+        fetchDetails();
+    }, [booking.id, booking.scheduleId, booking.discountType]);
 
     const getBookingTag = () => {
         if (booking.isFreeTicket) {
@@ -49,17 +112,11 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
 
 
     const generateQrCode = async () => {
-        if (!user || !schedule) return;
-        const qrCodeData = JSON.stringify({
-            bookingId: booking.id,
-            passenger: user.fullName,
-            scheduleId: booking.scheduleId,
-            seats: booking.seatIds || [],
-            route: `${booking.origin} to ${booking.destination}`,
-            bookingType: booking.isFreeTicket ? 'free' : (booking.discountType?.toLowerCase() || 'normal'),
-        });
+        const payload = getQrPayload();
+        if (!payload) return;
+
         try {
-            const url = await QRCode.toDataURL(qrCodeData, { errorCorrectionLevel: 'H', width: 256 });
+            const url = await QRCode.toDataURL(JSON.stringify(payload), { errorCorrectionLevel: 'H', width: 256 });
             setQrCodeDataUrl(url);
             setIsQrModalOpen(true);
         } catch (err) {
@@ -68,11 +125,17 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
     };
 
     const generatePdfReceipt = async () => {
-        if (!user || !schedule) return;
+        if (!user || !schedule || !schedule.fullRouteStops || !discounts) return;
         setIsDownloading(true);
         
         try {
             const doc = new jsPDF();
+            const formatTime = (timeStr?: string | null) => timeStr ? timeStr.substring(0, 5) : 'N/A';
+
+            const originStop = schedule.fullRouteStops.find(s => s.name === booking.origin);
+            const destStop = schedule.fullRouteStops.find(s => s.name === booking.destination);
+            const departureTime = formatTime(originStop?.departure);
+            const arrivalTime = formatTime(destStop?.arrival);
             
             doc.setFont("helvetica", "bold");
             doc.setFontSize(18);
@@ -84,43 +147,78 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
             doc.text(`Route: ${booking.origin} to ${booking.destination}`, 20, 45);
             doc.text(`Bus: ${schedule.busName} (${schedule.id})`, 20, 55);
             doc.text(`Booking Date: ${new Date(booking.bookingDate).toLocaleString()}`, 20, 65);
-            doc.text(`Seats: ${(booking.seatIds || []).join(', ')}`, 20, 75);
+            doc.text(`Departure from ${booking.origin}: ${departureTime}`, 20, 75);
+            doc.text(`Arrival at ${booking.destination}: ${arrivalTime}`, 20, 82);
+            doc.text(`Seats: ${(booking.seatIds || []).join(', ')}`, 20, 92);
 
-            const qrCodeData = JSON.stringify({
-                bookingId: booking.id,
-                passenger: user.fullName,
-                scheduleId: schedule.id,
-                seats: booking.seatIds || [],
-                route: `${booking.origin} to ${booking.destination}`,
-                bookingType: booking.isFreeTicket ? 'free' : (booking.discountType?.toLowerCase() || 'normal'),
-            });
-            const qrCodeDataURL = await QRCode.toDataURL(qrCodeData, { errorCorrectionLevel: 'H' });
+            const payload = getQrPayload();
+            if (!payload) {
+                setIsDownloading(false);
+                return;
+            }
+
+            const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(payload), { errorCorrectionLevel: 'H' });
             
             doc.addImage(qrCodeDataURL, 'PNG', 140, 30, 50, 50);
             doc.setFontSize(8);
             doc.text("Scan for Verification", 147, 85);
 
+            let yPos = 100;
+
+            // Ticket breakdown
+            doc.setFont("helvetica", "bold");
+            doc.text("Ticket Summary:", 20, yPos);
+            yPos += 7;
+            doc.setFont("helvetica", "normal");
+
+            const seniorSeatsCount = booking.passengerDetails?.filter(p => p.type === 'SENIOR').length || 0;
+            const childSeatsCount = booking.passengerDetails?.filter(p => p.type === 'CHILD').length || 0;
+            const normalSeats = (booking.seatIds?.length || 0) - seniorSeatsCount - childSeatsCount;
+
+            const segmentFare = (destStop?.fare || 0) - (originStop?.fare || 0);
+            const childFare = segmentFare * (1 - (discounts.child / 100));
+            const seniorFare = segmentFare * (1 - (discounts.senior / 100));
+
+            if (normalSeats > 0) {
+                const subtotal = normalSeats * segmentFare;
+                doc.text(`- Normal Tickets: ${normalSeats} x ₹${segmentFare.toFixed(2)} = ₹${subtotal.toFixed(2)}`, 25, yPos);
+                yPos += 7;
+            }
+            if (childSeatsCount > 0) {
+                const subtotal = childSeatsCount * childFare;
+                doc.text(`- Child Tickets: ${childSeatsCount} x ₹${childFare.toFixed(2)} = ₹${subtotal.toFixed(2)}`, 25, yPos);
+                yPos += 7;
+            }
+            if (seniorSeatsCount > 0) {
+                const subtotal = seniorSeatsCount * seniorFare;
+                doc.text(`- Senior Tickets: ${seniorSeatsCount} x ₹${seniorFare.toFixed(2)} = ₹${subtotal.toFixed(2)}`, 25, yPos);
+                yPos += 7;
+            }
+            if (yPos > 280) { doc.addPage(); yPos = 20; }
+            
+            // Passenger Details
+            if (booking.passengerDetails && booking.passengerDetails.length > 0) {
+                yPos += 5;
+                doc.setFont("helvetica", "bold");
+                doc.text("Discounted Passenger Details:", 20, yPos);
+                yPos += 7;
+                doc.setFont("helvetica", "normal");
+                
+                booking.passengerDetails.forEach(p => {
+                    doc.text(`- Seat ${p.seatId} (${p.type}): ${p.fullName}, Aadhaar: ...${p.aadhaarNumber.slice(-4)}`, 25, yPos);
+                    yPos += 7;
+                    if (yPos > 280) { doc.addPage(); yPos = 20; }
+                });
+            }
+
+            yPos += 5;
             doc.setFont("helvetica", "bold");
             let fareText = `Total Fare: INR ${Number(booking.fare || 0).toFixed(2)}`;
             if (booking.isFreeTicket) {
                 fareText = `Total Fare: FREE (Govt. Special Announcement)`;
-            } else if (booking.discountType === 'CHILD') {
-                fareText += ` (Child Discount)`;
-            } else if (booking.discountType === 'SENIOR') {
-                fareText += ` (Senior Discount)`;
-            } else if (booking.discountType === 'MIXED') {
-                 fareText += ` (Mixed Discount)`;
             }
-            doc.text(fareText, 20, 85);
+            doc.text(fareText, 20, yPos);
             
-            if (booking.aadhaarNumber) {
-                doc.setFont("helvetica", "normal");
-                const aadhaarText = booking.aadhaarNumber.length > 4 
-                    ? `Aadhaar No(s): ...${booking.aadhaarNumber.slice(-4)}`
-                    : `Aadhaar No: ${booking.aadhaarNumber}`;
-                doc.text(aadhaarText, 20, 95);
-            }
-
             doc.save(`GovernmentBus-Ticket-${booking.id}.pdf`);
         } catch (err) {
             console.error("Failed to generate PDF", err);
@@ -150,7 +248,7 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
                     <Button onClick={generateQrCode} variant="secondary" className="booking-detail-card__btn" disabled={!schedule}>
                         <div className="btn__loader"><QrCode size={18} /> Show QR</div>
                     </Button>
-                    <Button onClick={generatePdfReceipt} isLoading={isDownloading} disabled={!schedule} className="booking-detail-card__btn">
+                    <Button onClick={generatePdfReceipt} isLoading={isDownloading} disabled={!schedule || !discounts} className="booking-detail-card__btn">
                          <div className="btn__loader"><Download size={18} /> Download</div>
                     </Button>
                 </div>

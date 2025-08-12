@@ -1,6 +1,7 @@
 
 
 
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -825,7 +826,7 @@ apiRouter.get('/bookings/user/:userId', async (req, res) => {
          b.origin,
          b.destination,
          b.discountType,
-         b.aadhaarNumber,
+         b.passengerDetails,
          bs.seatId
        FROM bookings b
        LEFT JOIN bookedseats bs ON b.id = bs.bookingId
@@ -848,7 +849,7 @@ apiRouter.get('/bookings/user/:userId', async (req, res) => {
           origin: row.origin,
           destination: row.destination,
           discountType: row.discountType,
-          aadhaarNumber: row.aadhaarNumber,
+          passengerDetails: row.passengerDetails ? JSON.parse(row.passengerDetails) : [],
           seatIds: [],
         };
       }
@@ -968,10 +969,10 @@ apiRouter.post("/bookings", async (req, res) => {
         return res.status(400).json({ message: 'Missing or invalid required booking information.' });
     }
     
-    // Server-side validation for Aadhaar numbers
+    // Server-side validation for Aadhaar numbers and names
     for (const seat of seats) {
-        if ((seat.type === 'CHILD' || seat.type === 'SENIOR') && (!seat.aadhaarNumber || seat.aadhaarNumber.length !== 12)) {
-             return res.status(400).json({ message: `A valid 12-digit Aadhaar number is required for seat ${seat.seatId}.` });
+        if ((seat.type === 'CHILD' || seat.type === 'SENIOR') && (!seat.aadhaarNumber || seat.aadhaarNumber.length !== 12 || !seat.fullName || seat.fullName.trim() === '')) {
+             return res.status(400).json({ message: `Full name and a valid 12-digit Aadhaar number are required for seat ${seat.seatId}.` });
         }
     }
 
@@ -1006,7 +1007,7 @@ apiRouter.post("/bookings", async (req, res) => {
 
         let totalFare = 0;
         const seatTypes = new Set();
-        const aadhaarNumbers = [];
+        const passengerDetails = [];
 
         for(const seat of seats) {
             seatTypes.add(seat.type);
@@ -1014,10 +1015,10 @@ apiRouter.post("/bookings", async (req, res) => {
             if (isDiscountEnabled) {
                 if(seat.type === 'CHILD') {
                     finalFarePerSeat = baseFarePerSeat * (1 - (childDiscount / 100));
-                    aadhaarNumbers.push(seat.aadhaarNumber);
+                    passengerDetails.push({ seatId: seat.seatId, fullName: seat.fullName, aadhaarNumber: seat.aadhaarNumber, type: 'CHILD' });
                 } else if (seat.type === 'SENIOR') {
                     finalFarePerSeat = baseFarePerSeat * (1 - (seniorDiscount / 100));
-                    aadhaarNumbers.push(seat.aadhaarNumber);
+                    passengerDetails.push({ seatId: seat.seatId, fullName: seat.fullName, aadhaarNumber: seat.aadhaarNumber, type: 'SENIOR' });
                 }
             }
             totalFare += finalFarePerSeat;
@@ -1036,8 +1037,8 @@ apiRouter.post("/bookings", async (req, res) => {
         const bookingDate = new Date();
 
         await connection.execute(
-            `INSERT INTO bookings (id, userId, scheduleId, fare, bookingDate, isFreeTicket, origin, destination, discountType, aadhaarNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [bookingId, userId, scheduleId, totalFare, bookingDate, false, origin, destination, discountTypeForDb, aadhaarNumbers.length > 0 ? aadhaarNumbers.join(',') : null]
+            `INSERT INTO bookings (id, userId, scheduleId, fare, bookingDate, isFreeTicket, origin, destination, discountType, passengerDetails) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [bookingId, userId, scheduleId, totalFare, bookingDate, false, origin, destination, discountTypeForDb, passengerDetails.length > 0 ? JSON.stringify(passengerDetails) : null]
         );
 
         const seatInsertPromises = seats.map(seat =>
