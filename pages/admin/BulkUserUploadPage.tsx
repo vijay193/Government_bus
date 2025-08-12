@@ -154,7 +154,7 @@ export const BulkUserUploadPage: React.FC = () => {
         setError(null);
         setSuccess(null);
         try {
-            const response = await api.bulkCreateBeneficiaries(parsedBeneficiaries, user.id);
+            const response = await api.bulkCreateBeneficiaries(parsedBeneficiaries);
             setSuccess(`${response.message} Created: ${response.created}, Updated: ${response.updated}, Skipped: ${response.skipped}.`);
             setParsedBeneficiaries([]);
             setTextInput('');

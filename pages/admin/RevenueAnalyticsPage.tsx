@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../../hooks/useAuth';
@@ -36,9 +37,7 @@ export const RevenueAnalyticsPage: React.FC = () => {
             setIsLoading(true);
             setError(null);
             try {
-                // For sub-admins, pass their user ID to get scoped data
-                const userId = user.role === UserRole.SUB_ADMIN ? user.id : undefined;
-                const result = await api.getRevenueAnalytics(userId);
+                const result = await api.getRevenueAnalytics();
                 setData(result);
             } catch (err) {
                 setError('Failed to load revenue data. Please try again.');

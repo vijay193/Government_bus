@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../common/Modal';
 import { Input } from '../common/Input';
@@ -128,7 +129,7 @@ export const EditScheduleModal: React.FC<EditScheduleModalProps> = ({ isOpen, on
     setError(null);
     
     try {
-      await api.updateSchedule(scheduleToEdit.id, { ...formData, stops: routeStops }, user.id);
+      await api.updateSchedule(scheduleToEdit.id, { ...formData, stops: routeStops });
       onSave();
     } catch (err) {
       const message = err instanceof Error ? err.message : "An unexpected error occurred.";

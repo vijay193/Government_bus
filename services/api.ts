@@ -7,11 +7,31 @@ import type { Schedule, User, BusLocation, UserBooking, RevenueAnalyticsData, Pa
 // The backend is not part of this project, but these functions are wired
 // to make calls to endpoints that a real backend would expose based on the provided schema.
 
-const API_BASE_URL = 'https://81c75d04c091.ngrok-free.app/api'; // Using ngrok URL for AI Studio compatibility
+const API_BASE_URL = 'https://81c75d04c091.ngrok-free.app/api'; 
 
 const NGROK_HEADERS = {
   'ngrok-skip-browser-warning': 'true',
 };
+
+/**
+ * A helper function to get the auth token from localStorage.
+ */
+function getAuthToken(): string | null {
+    const storedSession = localStorage.getItem('session');
+    if (!storedSession) {
+        return null;
+    }
+    try {
+        const session = JSON.parse(storedSession);
+        // Check for token and expiry
+        if (session && session.token && session.expiry > Date.now()) {
+            return session.token;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
 
 
 /**
@@ -44,9 +64,11 @@ async function handleResponse<T>(response: Response): Promise<T> {
  * Custom fetch wrapper that adds ngrok-specific headers and handles responses.
  */
 async function apiFetch<T>(input: RequestInfo, init: RequestInit = {}): Promise<T> {
+  const token = getAuthToken();
   const headers = {
     ...(init.headers || {}),
     ...NGROK_HEADERS,
+    ...(token && { 'X-Auth-Token': token }),
   };
 
   const response = await fetch(input, { ...init, headers });
@@ -62,8 +84,8 @@ export const api = {
         return apiFetch<string[]>(`${API_BASE_URL}/districts`);
     },
 
-    login: (phone: string, password_val: string): Promise<User | null> => {
-        return apiFetch<User | null>(`${API_BASE_URL}/auth/login`, {
+    login: (phone: string, password_val: string): Promise<{ token: string, user: User } | null> => {
+        return apiFetch<{ token: string, user: User } | null>(`${API_BASE_URL}/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ phone, password: password_val }),
@@ -78,8 +100,8 @@ export const api = {
         });
     },
 
-    verifyOtp: (phone: string, otp: string): Promise<User | null> => {
-        return apiFetch<User | null>(`${API_BASE_URL}/auth/verify-otp`, {
+    verifyOtp: (phone: string, otp: string): Promise<{ token: string, user: User } | null> => {
+        return apiFetch<{ token: string, user: User } | null>(`${API_BASE_URL}/auth/verify-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ phone, otp }),
@@ -116,7 +138,6 @@ export const api = {
     },
 
     bookSeats: (
-        userId: string, 
         scheduleId: string, 
         seats: SeatBookingInfo[], 
         origin: string, 
@@ -126,7 +147,6 @@ export const api = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                userId, 
                 scheduleId, 
                 seats,
                 origin, 
@@ -135,11 +155,11 @@ export const api = {
         });
     },
 
-    bookFreeSeats: (userId: string, scheduleId: string, seatIds: string[], origin: string, destination: string, registrationNumber: string, phone: string): Promise<{ bookingId: string }> => {
+    bookFreeSeats: (scheduleId: string, seatIds: string[], origin: string, destination: string, registrationNumber: string, phone: string): Promise<{ bookingId: string }> => {
         return apiFetch<{ bookingId: string }>(`${API_BASE_URL}/bookings/free`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, scheduleId, seatIds, origin, destination, registrationNumber, phone }),
+            body: JSON.stringify({ scheduleId, seatIds, origin, destination, registrationNumber, phone }),
         });
     },
 
@@ -182,11 +202,11 @@ export const api = {
         return apiFetch<User[]>(`${API_BASE_URL}/users`);
     },
 
-    bulkCreateBeneficiaries: (beneficiaries: ParsedBeneficiary[], adminId: string): Promise<{ message: string, created: number, updated: number, skipped: number }> => {
+    bulkCreateBeneficiaries: (beneficiaries: ParsedBeneficiary[]): Promise<{ message: string, created: number, updated: number, skipped: number }> => {
         return apiFetch<{ message: string, created: number, updated: number, skipped: number }>(`${API_BASE_URL}/users/bulk-beneficiaries`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ beneficiaries, adminId }),
+            body: JSON.stringify({ beneficiaries }),
         });
     },
     
@@ -198,11 +218,11 @@ export const api = {
         });
     },
 
-    adminUpdateUser: (userId: string, data: Partial<User>, adminId: string): Promise<User> => {
+    adminUpdateUser: (userId: string, data: Partial<User>): Promise<User> => {
         return apiFetch<User>(`${API_BASE_URL}/users/admin/${encodeURIComponent(userId)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...data, adminId }),
+            body: JSON.stringify(data),
         });
     },
 
@@ -229,37 +249,29 @@ export const api = {
     },
 
     // --- Schedule Management ---
-    getAllSchedules: (userId?: string): Promise<Schedule[]> => {
-        let url = `${API_BASE_URL}/schedules`;
-        if (userId) {
-            url += `?userId=${encodeURIComponent(userId)}`;
-        }
-        return apiFetch<Schedule[]>(url);
+    getAllSchedules: (): Promise<Schedule[]> => {
+        return apiFetch<Schedule[]>(`${API_BASE_URL}/schedules`);
     },
     
-    updateSchedule: (scheduleId: string, data: { busName: string, seatLayout: SeatLayout, bookingEnabled: boolean, stops: ParsedStop[] }, userId: string): Promise<Schedule> => {
+    updateSchedule: (scheduleId: string, data: { busName: string, seatLayout: SeatLayout, bookingEnabled: boolean, stops: ParsedStop[] }): Promise<Schedule> => {
         return apiFetch<Schedule>(`${API_BASE_URL}/schedules/${encodeURIComponent(scheduleId)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...data, userId }),
+            body: JSON.stringify(data),
         });
     },
     
-    batchUploadSchedules: (schedules: ParsedSchedule[], userId: string): Promise<{ message: string }> => {
+    batchUploadSchedules: (schedules: ParsedSchedule[]): Promise<{ message: string }> => {
         return apiFetch<{ message: string }>(`${API_BASE_URL}/schedules/batch-upload`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ schedules, userId }),
+            body: JSON.stringify({ schedules }),
         });
     },
 
 
     // --- Revenue Analytics ---
-    getRevenueAnalytics: (userId?: string): Promise<RevenueAnalyticsData> => {
-        let url = `${API_BASE_URL}/analytics/revenue`;
-        if (userId) {
-            url += `?userId=${encodeURIComponent(userId)}`;
-        }
-        return apiFetch<RevenueAnalyticsData>(url);
+    getRevenueAnalytics: (): Promise<RevenueAnalyticsData> => {
+        return apiFetch<RevenueAnalyticsData>(`${API_BASE_URL}/analytics/revenue`);
     },
 };

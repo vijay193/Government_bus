@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from './useAuth';
 import { api } from '../services/api';
@@ -27,7 +28,7 @@ export const ManageSchedulesPage: React.FC = () => {
         try {
             setIsLoading(true);
             setError(null);
-            const schedulesData = await api.getAllSchedules(user.id);
+            const schedulesData = await api.getAllSchedules();
             setSchedules(schedulesData);
 
             if (user.role === UserRole.ADMIN) {

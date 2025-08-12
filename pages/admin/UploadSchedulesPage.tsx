@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../services/api';
@@ -190,7 +191,7 @@ export const UploadSchedulesPage: React.FC = () => {
         setError(null);
         setSuccess(null);
         try {
-            const response = await api.batchUploadSchedules(parsedSchedules, user.id);
+            const response = await api.batchUploadSchedules(parsedSchedules);
             setSuccess(response.message);
             clearState();
         } catch (err) {

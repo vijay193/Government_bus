@@ -21,7 +21,7 @@ const passwordHint = "Password must be at least 8 characters long and include on
 
 
 export const ProfilePage: React.FC = () => {
-    const { user, login } = useAuth();
+    const { user, login, token } = useAuth();
     const navigate = useNavigate();
     const [formData, setFormData] = useState({
         fullName: '',
@@ -104,7 +104,18 @@ export const ProfilePage: React.FC = () => {
             }
             
             const updatedUser = await api.updateUserProfile(user!.id, payload);
-            login(updatedUser); // Update auth context and local storage
+
+            // FIX: The login function from AuthContext expects an object with both the user and the token.
+            // The existing token is retrieved from the auth context and passed along with the updated user details.
+            if (token) {
+                login({ user: updatedUser, token });
+            } else {
+                // This case is unlikely due to ProtectedRoute, but is a safe fallback.
+                setError("Your session has expired. Please log in again.");
+                navigate('/login');
+                return;
+            }
+
             setSuccess("Profile updated successfully!");
             // Clear password fields after successful submission
             setFormData(prev => ({ ...prev, password: '', confirmPassword: ''}));

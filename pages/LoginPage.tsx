@@ -1,5 +1,6 @@
 
 
+
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Card } from '../components/common/Card';
@@ -27,9 +28,9 @@ export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
   
-  const handleLoginSuccess = (user: User) => {
-    login(user);
-    if (user.role === UserRole.ADMIN || user.role === UserRole.SUB_ADMIN) {
+  const handleLoginSuccess = (sessionData: { token: string; user: User }) => {
+    login(sessionData);
+    if (sessionData.user.role === UserRole.ADMIN || sessionData.user.role === UserRole.SUB_ADMIN) {
         navigate('/admin');
     } else {
         navigate('/');
@@ -55,9 +56,9 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const user = await api.login(phone, password);
-      if (user) {
-        handleLoginSuccess(user);
+      const sessionData = await api.login(phone, password);
+      if (sessionData) {
+        handleLoginSuccess(sessionData);
       } else {
         setError("Invalid phone number or password.");
       }
@@ -91,9 +92,9 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const user = await api.verifyOtp(phone, otp);
-      if (user) {
-        handleLoginSuccess(user);
+      const sessionData = await api.verifyOtp(phone, otp);
+      if (sessionData) {
+        handleLoginSuccess(sessionData);
       } else {
         setError("Invalid OTP. Please try again.");
       }

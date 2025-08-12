@@ -1,7 +1,6 @@
 
 
 
-
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -178,11 +177,62 @@ const fetchAndAssembleSchedules = async (connection, scheduleId = null) => {
     return schedulesMap;
 };
 
+// --- Authentication Middleware ---
+const authenticate = async (req, res, next) => {
+  const token = req.headers['x-auth-token'];
+  if (!token) {
+    return next(); // No token, proceed as anonymous user
+  }
+
+  try {
+    const [rows] = await dbPool.query('SELECT * FROM users WHERE id = ?', [token]);
+    if (rows.length === 0) {
+        return next(); // Invalid token
+    }
+    
+    const user = rows[0];
+    // For Sub-Admins, fetch their assigned districts and attach to the user object
+    if (user.role === 'SUB_ADMIN') {
+        const [districtRows] = await dbPool.query('SELECT district FROM subadmindistricts WHERE userId = ?', [user.id]);
+        user.assignedDistricts = districtRows.map(r => r.district);
+    }
+
+    const { password, ...userToExpose } = user;
+    req.user = userToExpose; // Attach user to the request object
+    next();
+  } catch (error) {
+    // This is a server error, not an authentication failure
+    console.error('Authentication middleware error:', error);
+    next(error);
+  }
+};
+
+const requireAuth = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Authentication required. Please log in.' });
+  }
+  next();
+};
+
+const requireAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== 'ADMIN') {
+    return res.status(403).json({ message: 'Permission denied. Administrator access required.' });
+  }
+  next();
+};
+
+const requireSubAdminOrAdmin = (req, res, next) => {
+  if (!req.user || (req.user.role !== 'ADMIN' && req.user.role !== 'SUB_ADMIN')) {
+    return res.status(403).json({ message: 'Permission denied. Administrator or Sub-Administrator access required.' });
+  }
+  next();
+};
+
 
 // --- API Routes ---
 const apiRouter = express.Router();
 
-// [GET] /api/districts
+// Public route for districts
 apiRouter.get('/districts', async (req, res) => {
     try {
         const [rows] = await dbPool.query( 
@@ -200,7 +250,7 @@ apiRouter.get('/districts', async (req, res) => {
     }
 });
 
-// [POST] /api/auth/register
+// Auth routes (public)
 apiRouter.post('/auth/register', async (req, res) => {
   const { fullName, email, phone, password, gender, dob } = req.body;
   if (!fullName || !email || !phone || !password || !gender || !dob) {
@@ -226,7 +276,6 @@ apiRouter.post('/auth/register', async (req, res) => {
   }
 });
 
-// [POST] /api/auth/login
 apiRouter.post('/auth/login', async (req, res) => {
   const { phone, password } = req.body;
   if (!phone || !password) {
@@ -250,13 +299,12 @@ apiRouter.post('/auth/login', async (req, res) => {
     }
 
     const { password: _, ...userToReturn } = user;
-    res.json(userToReturn);
+    res.json({ token: user.id, user: userToReturn });
   } catch (error) {
     handleDBError(res, error, 'login');
   }
 });
 
-// [POST] /api/auth/send-otp
 apiRouter.post('/auth/send-otp', async (req, res) => {
     const { phone } = req.body;
     if (!phone) {
@@ -264,37 +312,27 @@ apiRouter.post('/auth/send-otp', async (req, res) => {
     }
 
     try {
-        // Fetch both password and registration number to make a decision
         const [rows] = await dbPool.query('SELECT password, govtExamRegistrationNumber FROM users WHERE phone = ?', [phone]);
         if (rows.length === 0) {
             return res.status(404).json({ message: 'No account found with this phone number.' });
         }
         
         const user = rows[0];
-
-        // Block OTP login ONLY if the user has a password AND is NOT a govt beneficiary.
-        // Beneficiaries should be able to use OTP regardless of password status.
         if (user.password !== null && !user.govtExamRegistrationNumber) {
             return res.status(400).json({ message: 'This account uses a password. Please use the standard login.' });
         }
         
-        // Generate a 6-digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const expires = Date.now() + 5 * 60 * 1000; // 5 minutes validity
-
-        // Store OTP (in-memory for this project)
+        const expires = Date.now() + 5 * 60 * 1000;
         otpStore[phone] = { otp, expires };
-        console.log(`OTP for ${phone}: ${otp}`); // Log for simulation
+        console.log(`OTP for ${phone}: ${otp}`);
 
-        // In a real app, you would use an SMS gateway here.
-        // For this project, we return the OTP in the response for the user to see and enter.
         res.json({ message: 'OTP has been generated.', otp });
     } catch (error) {
         handleDBError(res, error, 'sendOtp');
     }
 });
 
-// [POST] /api/auth/verify-otp
 apiRouter.post('/auth/verify-otp', async (req, res) => {
     const { phone, otp } = req.body;
     if (!phone || !otp) {
@@ -310,7 +348,6 @@ apiRouter.post('/auth/verify-otp', async (req, res) => {
         return res.status(401).json({ message: 'OTP has expired. Please request a new one.' });
     }
 
-    // OTP is valid, fetch user and log them in
     try {
         const [rows] = await dbPool.query('SELECT * FROM users WHERE phone = ?', [phone]);
         const user = rows[0];
@@ -319,20 +356,19 @@ apiRouter.post('/auth/verify-otp', async (req, res) => {
             return res.status(404).json({ message: 'User not found after OTP verification.' });
         }
 
-        delete otpStore[phone]; // Clean up used OTP
+        delete otpStore[phone];
         const { password: _, ...userToReturn } = user;
-        res.json(userToReturn);
+        res.json({ token: user.id, user: userToReturn });
 
     } catch (error) {
         handleDBError(res, error, 'verifyOtpLogin');
     }
 });
 
+// All subsequent routes will be authenticated
+apiRouter.use(authenticate);
 
-// --- Settings Routes (Admin) ---
-// In a real app, these should be protected by an admin-only middleware.
-
-// [GET] /api/settings/:key
+// --- Settings Routes ---
 apiRouter.get('/settings/:key', async (req, res) => {
     try {
         const { key } = req.params;
@@ -340,7 +376,6 @@ apiRouter.get('/settings/:key', async (req, res) => {
         if (rows.length > 0) {
             res.json({ key: key, value: rows[0].value });
         } else {
-            // If setting doesn't exist, create it with a default value
             const defaultSettings = {
                 isFreeBookingEnabled: 'false',
                 isBookingSystemOnline: 'false',
@@ -349,7 +384,6 @@ apiRouter.get('/settings/:key', async (req, res) => {
                 childDiscountPercentage: '40',
                 seniorDiscountPercentage: '50'
             };
-
             if (key in defaultSettings) {
                 const defaultValue = defaultSettings[key];
                 await dbPool.query("INSERT INTO settings (`key`, `value`) VALUES (?, ?)", [key, defaultValue]);
@@ -363,14 +397,12 @@ apiRouter.get('/settings/:key', async (req, res) => {
     }
 });
 
-// [PUT] /api/settings
-apiRouter.put('/settings', async (req, res) => {
+apiRouter.put('/settings', requireAdmin, async (req, res) => {
     const { key, value } = req.body;
     if (!key || value === undefined || value === null) {
         return res.status(400).json({ message: 'A key and value are required.' });
     }
     
-    // The value from the client is already a string via `String(value)`
     const valueToStore = String(value);
 
     try {
@@ -398,8 +430,8 @@ apiRouter.get('/discounts/districts', async (req, res) => {
     }
 });
 
-apiRouter.put('/discounts/districts', async (req, res) => {
-    const { districts } = req.body; // Expects an array of district names
+apiRouter.put('/discounts/districts', requireAdmin, async (req, res) => {
+    const { districts } = req.body;
     if (!Array.isArray(districts)) {
         return res.status(400).json({ message: 'Districts must be provided as an array.' });
     }
@@ -407,11 +439,8 @@ apiRouter.put('/discounts/districts', async (req, res) => {
     const connection = await dbPool.getConnection();
     try {
         await connection.beginTransaction();
-        
-        // Clear all existing discounted districts
         await connection.query('TRUNCATE TABLE discounted_districts');
 
-        // Insert the new list of discounted districts, if any
         if (districts.length > 0) {
             const values = districts.map(district => [district]);
             await connection.query('INSERT INTO discounted_districts (district_name) VALUES ?', [values]);
@@ -427,35 +456,16 @@ apiRouter.put('/discounts/districts', async (req, res) => {
     }
 });
 
-
-// --- Schedule Routes (Ordered from most specific to most generic) ---
-
-// [GET] /api/schedules
+// --- Schedule Routes ---
 apiRouter.get('/schedules', async (req, res) => {
-    const { userId } = req.query;
+    const user = req.user;
     try {
-        let userRole = null;
-        let assignedDistricts = [];
-
-        if (userId) {
-            const [userRows] = await dbPool.query('SELECT role FROM users WHERE id = ?', [userId]);
-            if (userRows.length > 0) {
-                userRole = userRows[0].role;
-                if (userRole === 'SUB_ADMIN') {
-                    const [districtRows] = await dbPool.query('SELECT district FROM subadmindistricts WHERE userId = ?', [userId]);
-                    assignedDistricts = districtRows.map(r => r.district);
-                }
-            } else {
-                return res.json([]); // Invalid user ID
-            }
-        }
-
         const schedulesMap = await fetchAndAssembleSchedules(dbPool);
         let allSchedules = Object.values(schedulesMap);
-
         let schedulesToReturn = allSchedules;
 
-        if (userRole === 'SUB_ADMIN') {
+        if (user && user.role === 'SUB_ADMIN') {
+            const assignedDistricts = user.assignedDistricts || [];
             if (assignedDistricts.length === 0) {
                 schedulesToReturn = [];
             } else {
@@ -469,36 +479,24 @@ apiRouter.get('/schedules', async (req, res) => {
             const { fullRouteStops, fullNormalizedRoute, ...cleaned } = s;
             return cleaned;
         });
-
         res.json(cleanedSchedules);
     } catch (error) {
         handleDBError(res, error, 'getAllSchedules');
     }
 });
 
+apiRouter.post('/schedules/batch-upload', requireSubAdminOrAdmin, async (req, res) => {
+    const { schedules } = req.body;
+    const user = req.user;
 
-// [POST] /api/schedules/batch-upload
-apiRouter.post('/schedules/batch-upload', async (req, res) => {
-    const { schedules, userId } = req.body;
-
-    if (!userId || !Array.isArray(schedules) || schedules.length === 0) {
-        return res.status(400).json({ message: 'User ID and a non-empty array of schedules are required.' });
+    if (!Array.isArray(schedules) || schedules.length === 0) {
+        return res.status(400).json({ message: 'A non-empty array of schedules is required.' });
     }
 
     const connection = await dbPool.getConnection();
     try {
-        // --- Authorization Check ---
-        const [userRows] = await connection.query('SELECT role FROM users WHERE id = ?', [userId]);
-        if (userRows.length === 0) {
-            connection.release();
-            return res.status(404).json({ message: 'Uploader user not found.' });
-        }
-        const user = userRows[0];
-
         if (user.role === 'SUB_ADMIN') {
-            const [districtRows] = await connection.query('SELECT district FROM subadmindistricts WHERE userId = ?', [userId]);
-            const assignedDistricts = districtRows.map(r => r.district);
-            
+            const assignedDistricts = user.assignedDistricts || [];
             if (assignedDistricts.length === 0) {
                 connection.release();
                 return res.status(403).json({ message: 'You have no districts assigned to you.' });
@@ -512,24 +510,13 @@ apiRouter.post('/schedules/batch-upload', async (req, res) => {
                 }
             }
         }
-        // Admins can proceed without district checks
 
-        // --- Database Insertion ---
         await connection.beginTransaction();
-        
-        // This logic is critical to prevent NULL IDs in the routestops table.
-        // 1. We lock the table to prevent other uploads from running at the same time and causing ID conflicts.
-        // 2. We find the current highest ID. If the table is empty, we start from 0.
-        // 3. We create a counter `nextStopId` that starts from `maxId + 1`.
         const [maxIdRows] = await connection.query('SELECT MAX(id) as maxId FROM routestops FOR UPDATE');
-        let nextStopId = (maxIdRows[0]?.maxId || 0) + 1; // Start from the next available ID
+        let nextStopId = (maxIdRows[0]?.maxId || 0) + 1;
 
         for (const schedule of schedules) {
-            // If an ID is provided (from CSV or AI), use it. Otherwise, create a new unique ID.
-            // This addresses the issue of inconsistent ID formats.
             const scheduleId = schedule.id || uuidv4();
-            
-            // Check if schedule ID already exists to prevent duplicates
             const [existingSchedule] = await connection.query('SELECT id FROM schedules WHERE id = ?', [scheduleId]);
             if (existingSchedule.length > 0) {
                 await connection.rollback();
@@ -537,31 +524,17 @@ apiRouter.post('/schedules/batch-upload', async (req, res) => {
                 return res.status(409).json({ message: `A schedule with ID '${scheduleId}' already exists. Please use a unique scheduleIdentifier.` });
             }
 
-            // Insert the main schedule record
             await connection.query(
                 'INSERT INTO schedules (id, busName, seatLayout, bookingEnabled) VALUES (?, ?, ?, ?)',
                 [scheduleId, schedule.busName, schedule.seatLayout, schedule.bookingEnabled ? '1' : '0']
             );
 
-            // Loop through each stop for the current schedule
             for (let i = 0; i < schedule.stops.length; i++) {
                 const stop = schedule.stops[i];
-                // Use the counter for the stop's primary key `id`.
-                // The order of parameters here MUST match the order of columns in the INSERT statement.
                 await connection.query(
                     'INSERT INTO routestops (id, scheduleId, stopName, stopOrder, arrivalTime, departureTime, fare) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [
-                        nextStopId,           // id
-                        scheduleId,           // scheduleId
-                        stop.stopName,        // stopName
-                        i,                    // stopOrder (using loop index for guaranteed sequence)
-                        stop.arrivalTime || null, // arrivalTime
-                        stop.departureTime,   // departureTime
-                        stop.fareFromOrigin   // fare
-                    ]
+                    [nextStopId++, scheduleId, stop.stopName, i, stop.arrivalTime || null, stop.departureTime, stop.fareFromOrigin]
                 );
-                // IMPORTANT: Increment the counter for the next stop to have a unique ID.
-                nextStopId++;
             }
         }
 
@@ -576,56 +549,32 @@ apiRouter.post('/schedules/batch-upload', async (req, res) => {
     }
 });
 
-// [PUT] /api/schedules/:id
-apiRouter.put('/schedules/:id', async (req, res) => {
+apiRouter.put('/schedules/:id', requireSubAdminOrAdmin, async (req, res) => {
     const { id } = req.params;
-    const { busName, seatLayout, bookingEnabled, userId, stops } = req.body;
+    const { busName, seatLayout, bookingEnabled, stops } = req.body;
+    const user = req.user;
 
-    // Validate required fields
-    if (!busName || !seatLayout || typeof bookingEnabled !== 'boolean' || !userId) {
+    if (!busName || !seatLayout || typeof bookingEnabled !== 'boolean' || !stops || !Array.isArray(stops) || stops.length === 0) {
         return res.status(400).json({ message: 'Missing required schedule details.' });
-    }
-    if (stops && (!Array.isArray(stops) || stops.length === 0)) {
-        return res.status(400).json({ message: 'Stops data, if provided, must be a non-empty array.' });
     }
 
     const connection = await dbPool.getConnection();
     try {
         await connection.beginTransaction();
 
-        // --- Authorization ---
-        const [userRows] = await connection.query('SELECT role FROM users WHERE id = ?', [userId]);
-        if (userRows.length === 0) {
-            await connection.rollback();
-            return res.status(404).json({ message: 'User not found.' });
-        }
-        const user = userRows[0];
-        
-        if (user.role !== 'ADMIN' && user.role !== 'SUB_ADMIN') {
-             await connection.rollback();
-             return res.status(403).json({ message: 'You are not authorized to perform this action.' });
-        }
-
         if (user.role === 'SUB_ADMIN') {
-            const [districtRows] = await connection.query('SELECT district FROM subadmindistricts WHERE userId = ?', [userId]);
-            const assignedDistricts = districtRows.map(r => r.district);
-
-            // If stops are being updated, we check the NEW origin district.
-            // This prevents a sub-admin from changing a route to a district they don't own.
+            const assignedDistricts = user.assignedDistricts || [];
             const newOriginDistrict = stops?.[0]?.stopName;
             if (!newOriginDistrict) {
                  await connection.rollback();
                  return res.status(400).json({ message: 'An updated route must have a valid origin stop.' });
             }
-
             if (!assignedDistricts.includes(newOriginDistrict)) {
                 await connection.rollback();
                 return res.status(403).json({ message: 'You are not authorized to manage schedules for this district.' });
             }
         }
-        // Admin can edit any schedule.
 
-        // --- Update basic schedule details ---
         const [result] = await connection.query(
             'UPDATE schedules SET busName = ?, seatLayout = ?, bookingEnabled = ? WHERE id = ?',
             [busName, seatLayout, bookingEnabled ? '1' : '0', id]
@@ -636,36 +585,19 @@ apiRouter.put('/schedules/:id', async (req, res) => {
             return res.status(404).json({ message: 'Schedule not found.' });
         }
         
-        // --- Replace route stops if provided ---
-        if (stops) {
-            // Delete old stops for this schedule
-            await connection.query('DELETE FROM routestops WHERE scheduleId = ?', [id]);
+        await connection.query('DELETE FROM routestops WHERE scheduleId = ?', [id]);
+        const [maxIdRows] = await connection.query('SELECT MAX(id) as maxId FROM routestops FOR UPDATE');
+        let nextStopId = (maxIdRows[0]?.maxId || 0) + 1;
 
-            // Get the next available primary key ID for routestops to prevent collisions
-            const [maxIdRows] = await connection.query('SELECT MAX(id) as maxId FROM routestops FOR UPDATE');
-            let nextStopId = (maxIdRows[0]?.maxId || 0) + 1;
-
-            // Insert new stops in the provided order
-            for (let i = 0; i < stops.length; i++) {
-                const stop = stops[i];
-                await connection.query(
-                    'INSERT INTO routestops (id, scheduleId, stopName, stopOrder, arrivalTime, departureTime, fare) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [
-                        nextStopId++,
-                        id,
-                        stop.stopName,
-                        i, // The array index from the client dictates the new stop order
-                        stop.arrivalTime || null,
-                        stop.departureTime,
-                        stop.fareFromOrigin,
-                    ]
-                );
-            }
+        for (let i = 0; i < stops.length; i++) {
+            const stop = stops[i];
+            await connection.query(
+                'INSERT INTO routestops (id, scheduleId, stopName, stopOrder, arrivalTime, departureTime, fare) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [nextStopId++, id, stop.stopName, i, stop.arrivalTime || null, stop.departureTime, stop.fareFromOrigin]
+            );
         }
         
         await connection.commit();
-        
-        // Return the full, updated schedule object
         const schedulesMap = await fetchAndAssembleSchedules(connection, id);
         res.status(200).json(schedulesMap[id]);
 
@@ -678,7 +610,6 @@ apiRouter.put('/schedules/:id', async (req, res) => {
 });
 
 
-// [GET] /api/schedules/route
 apiRouter.get('/schedules/route', async (req, res) => {
   const { origin, destination } = req.query;
   if (!origin || !destination) {
@@ -689,28 +620,19 @@ apiRouter.get('/schedules/route', async (req, res) => {
     const schedulesMap = await fetchAndAssembleSchedules(dbPool);
     const systemSettings = await getSettings(dbPool);
     const isBookingOnline = systemSettings.isBookingSystemOnline === true;
-
     const searchOrigin = origin.trim().toLowerCase();
     const searchDestination = destination.trim().toLowerCase();
 
     const matchedSchedules = Object.values(schedulesMap).reduce((acc, schedule) => {
       if (!Array.isArray(schedule.fullRouteStops)) return acc;
-
-      const originIndex = schedule.fullRouteStops.findIndex(
-        s => s.normalizedName === searchOrigin
-      );
-      const destIndex = schedule.fullRouteStops.findIndex(
-        s => s.normalizedName === searchDestination
-      );
+      const originIndex = schedule.fullRouteStops.findIndex(s => s.normalizedName === searchOrigin);
+      const destIndex = schedule.fullRouteStops.findIndex(s => s.normalizedName === searchDestination);
 
       if (originIndex > -1 && destIndex > -1 && originIndex < destIndex) {
         const originStop = schedule.fullRouteStops[originIndex];
         const destStop = schedule.fullRouteStops[destIndex];
-
         const fare = Number(destStop.fare || 0) - Number(originStop.fare || 0);
-        const viaStops = schedule.fullRouteStops.slice(originIndex + 1, destIndex)
-          .map(s => s.name || s.stopName || '');
-
+        const viaStops = schedule.fullRouteStops.slice(originIndex + 1, destIndex).map(s => s.name || s.stopName || '');
         const fullRouteStops = [...schedule.fullRouteStops].sort((a, b) => a.stopOrder - b.stopOrder);
         const fullRouteStart = fullRouteStops[0]?.name || 'Unknown';
         const fullRouteEnd = fullRouteStops.at(-1)?.name || 'Unknown';
@@ -731,7 +653,6 @@ apiRouter.get('/schedules/route', async (req, res) => {
           via: viaStops,
         });
       }
-
       return acc;
     }, []);
 
@@ -742,7 +663,6 @@ apiRouter.get('/schedules/route', async (req, res) => {
 });
 
 
-// [GET] /api/schedules/district/:district
 apiRouter.get('/schedules/district/:district', async (req, res) => {
   const { district } = req.params;
   if (!district) {
@@ -757,7 +677,6 @@ apiRouter.get('/schedules/district/:district', async (req, res) => {
 
     const matchedSchedules = Object.values(schedulesMap).reduce((acc, schedule) => {
       if (!Array.isArray(schedule.fullRouteStops)) return acc;
-
       const sortedStops = [...schedule.fullRouteStops].sort((a, b) => a.stopOrder - b.stopOrder);
       const firstStop = sortedStops[0];
       const lastStop = sortedStops.at(-1);
@@ -778,7 +697,6 @@ apiRouter.get('/schedules/district/:district', async (req, res) => {
         fare: Number(lastStop?.fare || 0),
         via: sortedStops.slice(1, -1).map(stop => stop.name || stop.stopName || ''),
       });
-
       return acc;
     }, []);
 
@@ -790,44 +708,29 @@ apiRouter.get('/schedules/district/:district', async (req, res) => {
 });
 
 
-// [GET] /api/schedules/:id
 apiRouter.get('/schedules/:id', async (req, res) => {
   try {
     const schedulesMap = await fetchAndAssembleSchedules(dbPool, req.params.id);
     const schedule = schedulesMap[req.params.id];
-
     if (!schedule) {
       return res.status(404).json({ message: 'Schedule not found.' });
     }
-    
-    // Return the full schedule object, including the detailed stops array
     res.json(schedule);
   } catch (error) {
     handleDBError(res, error, 'getScheduleById');
   }
 });
 
-
 // --- Booking Routes ---
-
-// [GET] /api/bookings/user/:userId
-apiRouter.get('/bookings/user/:userId', async (req, res) => {
+apiRouter.get('/bookings/user/:userId', requireAuth, async (req, res) => {
   const { userId } = req.params;
+  if (req.user.id !== userId) {
+      return res.status(403).json({ message: 'Permission denied. You can only view your own bookings.' });
+  }
 
   try {
     const [rows] = await dbPool.query(
-      `SELECT 
-         b.id AS bookingId,
-         b.scheduleId,
-         b.fare,
-         b.isFreeTicket,
-         b.govtExamRegistrationNumber,
-         b.bookingDate,
-         b.origin,
-         b.destination,
-         b.discountType,
-         b.passengerDetails,
-         bs.seatId
+      `SELECT b.id AS bookingId, b.scheduleId, b.fare, b.isFreeTicket, b.govtExamRegistrationNumber, b.bookingDate, b.origin, b.destination, b.discountType, b.passengerDetails, bs.seatId
        FROM bookings b
        LEFT JOIN bookedseats bs ON b.id = bs.bookingId
        WHERE b.userId = ?
@@ -835,7 +738,6 @@ apiRouter.get('/bookings/user/:userId', async (req, res) => {
       [userId]
     );
 
-    // Group seatIds by bookingId
     const bookingsMap = {};
     for (const row of rows) {
       if (!bookingsMap[row.bookingId]) {
@@ -858,20 +760,16 @@ apiRouter.get('/bookings/user/:userId', async (req, res) => {
       }
     }
 
-    const bookings = Object.values(bookingsMap);
-    res.status(200).json(bookings);
+    res.status(200).json(Object.values(bookingsMap));
   } catch (error) {
     handleDBError(res, error, 'getUserBookingsWithSeats');
   }
 });
 
-// [GET] /api/bookings/seats/:scheduleId
 apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
   try {
     const [rows] = await dbPool.query(
-      `SELECT bs.seatId FROM bookedseats bs 
-       JOIN bookings b ON bs.bookingId = b.id 
-       WHERE b.scheduleId = ?`,
+      `SELECT bs.seatId FROM bookedseats bs JOIN bookings b ON bs.bookingId = b.id WHERE b.scheduleId = ?`,
       [req.params.scheduleId]
     );
     res.json(rows.map(row => row.seatId));
@@ -880,11 +778,11 @@ apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
   }
 });
 
-// [POST] /api/bookings/free
-apiRouter.post('/bookings/free', async (req, res) => {
-    const { userId, scheduleId, seatIds, origin, destination, registrationNumber, phone } = req.body;
+apiRouter.post('/bookings/free', requireAuth, async (req, res) => {
+    const { scheduleId, seatIds, origin, destination, registrationNumber, phone } = req.body;
+    const userId = req.user.id;
 
-    if (!userId || !scheduleId || !Array.isArray(seatIds) || !origin || !destination || !registrationNumber || !phone) {
+    if (!scheduleId || !Array.isArray(seatIds) || !origin || !destination || !registrationNumber || !phone) {
         return res.status(400).json({ message: 'All booking and verification fields are required.' });
     }
     if (seatIds.length !== 1) {
@@ -896,23 +794,16 @@ apiRouter.post('/bookings/free', async (req, res) => {
         await connection.beginTransaction();
 
         const [settingsRows] = await connection.query("SELECT `value` FROM settings WHERE `key` = 'isFreeBookingEnabled'");
-        const isFreeBookingEnabled = settingsRows.length > 0 && settingsRows[0].value === 'true';
-
-        if (!isFreeBookingEnabled) {
+        if (!(settingsRows.length > 0 && settingsRows[0].value === 'true')) {
             await connection.rollback();
             return res.status(403).json({ message: 'Free booking is currently disabled by the administrator.' });
         }
         
-        const [beneficiaryRows] = await connection.query(
-            "SELECT * FROM govtbeneficiaries WHERE govtExamRegistrationNumber = ? AND phone = ? FOR UPDATE",
-            [registrationNumber, phone]
-        );
-
+        const [beneficiaryRows] = await connection.query("SELECT * FROM govtbeneficiaries WHERE govtExamRegistrationNumber = ? AND phone = ? FOR UPDATE", [registrationNumber, phone]);
         if (beneficiaryRows.length === 0) {
             await connection.rollback();
             return res.status(404).json({ message: 'Mismatch/Invalid: Registration number or phone did not match.' });
         }
-
         const beneficiary = beneficiaryRows[0];
         if (beneficiary.ticketClaimed) {
             await connection.rollback();
@@ -924,24 +815,12 @@ apiRouter.post('/bookings/free', async (req, res) => {
           'INSERT INTO bookings (id, userId, scheduleId, fare, origin, destination, isFreeTicket, govtExamRegistrationNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
           [bookingId, userId, scheduleId, 0, origin, destination, true, registrationNumber]
         );
-
-
-        const seatInsertPromises = seatIds.map(seatId =>
-            connection.query('INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)', [bookingId, seatId, origin, destination])
-        );
+        
+        const seatInsertPromises = seatIds.map(seatId => connection.query('INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)', [bookingId, seatId, origin, destination]));
         await Promise.all(seatInsertPromises);
         
-        // Mark the ticket as claimed in the beneficiaries table
-        await connection.query(
-            "UPDATE govtbeneficiaries SET ticketClaimed = 1 WHERE id = ?",
-            [beneficiary.id]
-        );
-        
-        // Also update the user's registration number if it's not already set
-        await connection.query(
-            "UPDATE users SET govtExamRegistrationNumber = ? WHERE id = ? AND govtExamRegistrationNumber IS NULL",
-            [registrationNumber, userId]
-        );
+        await connection.query("UPDATE govtbeneficiaries SET ticketClaimed = 1 WHERE id = ?", [beneficiary.id]);
+        await connection.query("UPDATE users SET govtExamRegistrationNumber = ? WHERE id = ? AND govtExamRegistrationNumber IS NULL", [registrationNumber, userId]);
 
         await connection.commit();
         res.status(201).json({ bookingId });
@@ -953,23 +832,20 @@ apiRouter.post('/bookings/free', async (req, res) => {
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ message: 'One or more selected seats have just been booked. Please refresh and try again.' });
         }
-        console.error('Free Booking Error:', error);
         handleDBError(res, error, 'createFreeBooking');
     } finally {
         connection.release();
     }
 });
 
+apiRouter.post("/bookings", requireAuth, async (req, res) => {
+    const { scheduleId, seats, origin, destination } = req.body;
+    const userId = req.user.id;
 
-// [POST] /api/bookings
-apiRouter.post("/bookings", async (req, res) => {
-    const { userId, scheduleId, seats, origin, destination } = req.body;
-
-    if (!userId || !scheduleId || !Array.isArray(seats) || seats.length === 0 || !origin || !destination) {
+    if (!scheduleId || !Array.isArray(seats) || seats.length === 0 || !origin || !destination) {
         return res.status(400).json({ message: 'Missing or invalid required booking information.' });
     }
     
-    // Server-side validation for Aadhaar numbers and names
     for (const seat of seats) {
         if ((seat.type === 'CHILD' || seat.type === 'SENIOR') && (!seat.aadhaarNumber || seat.aadhaarNumber.length !== 12 || !seat.fullName || seat.fullName.trim() === '')) {
              return res.status(400).json({ message: `Full name and a valid 12-digit Aadhaar number are required for seat ${seat.seatId}.` });
@@ -1025,28 +901,17 @@ apiRouter.post("/bookings", async (req, res) => {
         }
         
         let discountTypeForDb = 'NONE';
-        if (seatTypes.size > 1) {
-            discountTypeForDb = 'MIXED';
-        } else if (seatTypes.has('CHILD')) {
-            discountTypeForDb = 'CHILD';
-        } else if (seatTypes.has('SENIOR')) {
-            discountTypeForDb = 'SENIOR';
-        }
+        if (seatTypes.size > 1) discountTypeForDb = 'MIXED';
+        else if (seatTypes.has('CHILD')) discountTypeForDb = 'CHILD';
+        else if (seatTypes.has('SENIOR')) discountTypeForDb = 'SENIOR';
 
         const bookingId = uuidv4();
-        const bookingDate = new Date();
-
         await connection.execute(
             `INSERT INTO bookings (id, userId, scheduleId, fare, bookingDate, isFreeTicket, origin, destination, discountType, passengerDetails) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [bookingId, userId, scheduleId, totalFare, bookingDate, false, origin, destination, discountTypeForDb, passengerDetails.length > 0 ? JSON.stringify(passengerDetails) : null]
+            [bookingId, userId, scheduleId, totalFare, new Date(), false, origin, destination, discountTypeForDb, passengerDetails.length > 0 ? JSON.stringify(passengerDetails) : null]
         );
 
-        const seatInsertPromises = seats.map(seat =>
-            connection.execute(
-                `INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)`,
-                [bookingId, seat.seatId, origin, destination]
-            )
-        );
+        const seatInsertPromises = seats.map(seat => connection.execute(`INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)`, [bookingId, seat.seatId, origin, destination]));
         await Promise.all(seatInsertPromises);
 
         await connection.commit();
@@ -1062,8 +927,6 @@ apiRouter.post("/bookings", async (req, res) => {
     }
 });
 
-
-// [GET] /api/tracking/:busId
 apiRouter.get('/tracking/:busId', async (req, res) => {
   const schedulesMap = await fetchAndAssembleSchedules(dbPool, req.params.busId);
   const schedule = schedulesMap[req.params.busId];
@@ -1077,35 +940,21 @@ apiRouter.get('/tracking/:busId', async (req, res) => {
   });
 });
 
-
-// --- User Management Routes (Admin) ---
-
-// [GET] /api/users/:userId/pass-card
-apiRouter.get('/users/:userId/pass-card', async (req, res) => {
+// --- User Management Routes ---
+apiRouter.get('/users/:userId/pass-card', requireAuth, async (req, res) => {
     const { userId } = req.params;
+    if (req.user.id !== userId) {
+        return res.status(403).json({ message: 'Permission denied.' });
+    }
 
     try {
-        // First, check if the system is enabled by the admin
         const [[setting]] = await dbPool.query("SELECT value FROM settings WHERE `key` = 'isPassCardSystemEnabled'");
-        const isEnabled = setting && setting.value === 'true';
-        
-        if (!isEnabled) {
-            return res.json(null); // System is disabled, return nothing
+        if (!(setting && setting.value === 'true')) {
+            return res.json(null);
         }
         
-        // System is enabled, try to find a pass card for the user and join with user details
         const [rows] = await dbPool.query(
-            `SELECT
-                pc.id,
-                pc.userId,
-                pc.passCardNumber,
-                pc.userImage,
-                pc.fatherName,
-                pc.origin,
-                pc.destination,
-                pc.expiryDate,
-                u.fullName,
-                u.dob
+            `SELECT pc.id, pc.userId, pc.passCardNumber, pc.userImage, pc.fatherName, pc.origin, pc.destination, pc.expiryDate, u.fullName, u.dob
             FROM user_pass_cards pc
             JOIN users u ON pc.userId = u.id
             WHERE pc.userId = ?`,
@@ -1114,19 +963,13 @@ apiRouter.get('/users/:userId/pass-card', async (req, res) => {
         
         if (rows.length > 0) {
             const passCard = rows[0];
-            // Format dates to ISO string YYYY-MM-DD
-            if (passCard.expiryDate) {
-              passCard.expiryDate = new Date(passCard.expiryDate).toISOString().split('T')[0];
-            }
-             if (passCard.dob) {
-              passCard.dob = new Date(passCard.dob).toISOString().split('T')[0];
-            }
+            if (passCard.expiryDate) passCard.expiryDate = new Date(passCard.expiryDate).toISOString().split('T')[0];
+            if (passCard.dob) passCard.dob = new Date(passCard.dob).toISOString().split('T')[0];
             res.json(passCard);
         } else {
-            res.json(null); // No pass card found for this user
+            res.json(null);
         }
     } catch (error) {
-        // If the table doesn't exist yet, gracefully return null instead of throwing an error.
         if (error.code === 'ER_NO_SUCH_TABLE') {
              console.log("`user_pass_cards` table not found, returning null.");
              return res.json(null);
@@ -1135,16 +978,13 @@ apiRouter.get('/users/:userId/pass-card', async (req, res) => {
     }
 });
 
-
-// [PUT] /api/users/profile/:id - For a user to update their own profile
-apiRouter.put('/users/profile/:id', async (req, res) => {
+apiRouter.put('/users/profile/:id', requireAuth, async (req, res) => {
     const { id } = req.params;
-    const { fullName, email, phone, gender, password, dob } = req.body;
-
-    if (!id) {
-        return res.status(400).json({ message: 'User ID is required.' });
+    if (req.user.id !== id) {
+        return res.status(403).json({ message: 'You can only update your own profile.' });
     }
-    
+
+    const { fullName, email, phone, gender, password, dob } = req.body;
     const connection = await dbPool.getConnection();
     try {
         await connection.beginTransaction();
@@ -1173,31 +1013,22 @@ apiRouter.put('/users/profile/:id', async (req, res) => {
 
         sql += ' WHERE id = ?';
         params.push(id);
-
         await connection.query(sql, params);
 
-        // If phone number was changed, sync it to the govtbeneficiaries table
         if (phone) {
             await connection.query(
-                `UPDATE govtbeneficiaries gb
-                 JOIN users u ON gb.govtExamRegistrationNumber = u.govtExamRegistrationNumber
-                 SET gb.phone = ?
-                 WHERE u.id = ?`,
+                `UPDATE govtbeneficiaries gb JOIN users u ON gb.govtExamRegistrationNumber = u.govtExamRegistrationNumber SET gb.phone = ? WHERE u.id = ?`,
                  [phone, id]
             );
         }
-
         await connection.commit();
 
-        // Fetch and return the updated user data (without password)
         const [rows] = await connection.query('SELECT * FROM users WHERE id = ?', [id]);
         if (rows.length === 0) {
             return res.status(404).json({ message: 'User not found after update.' });
         }
         const { password: _, ...updatedUser } = rows[0];
-
         res.status(200).json(updatedUser);
-
     } catch (error) {
         await connection.rollback();
         if (error.code === 'ER_DUP_ENTRY') {
@@ -1209,30 +1040,17 @@ apiRouter.put('/users/profile/:id', async (req, res) => {
     }
 });
 
-// [POST] /api/users/bulk-beneficiaries
-apiRouter.post('/users/bulk-beneficiaries', async (req, res) => {
-    const { beneficiaries, adminId } = req.body;
+apiRouter.post('/users/bulk-beneficiaries', requireAdmin, async (req, res) => {
+    const { beneficiaries } = req.body;
     
-    if (!adminId) {
-        return res.status(403).json({ message: 'Admin authentication is required.' });
-    }
     if (!Array.isArray(beneficiaries) || beneficiaries.length === 0) {
         return res.status(400).json({ message: 'A non-empty array of beneficiaries is required.' });
     }
 
     const connection = await dbPool.getConnection();
     try {
-        const [adminRows] = await connection.query('SELECT role FROM users WHERE id = ?', [adminId]);
-        if (adminRows.length === 0 || adminRows[0].role !== 'ADMIN') {
-            connection.release();
-            return res.status(403).json({ message: 'Permission denied. This action is for administrators only.' });
-        }
-
         await connection.beginTransaction();
-
-        let createdCount = 0;
-        let updatedCount = 0;
-        let skippedCount = 0;
+        let createdCount = 0, updatedCount = 0, skippedCount = 0;
         
         for (const bene of beneficiaries) {
             const { govtExamRegistrationNumber, phone, fullName, email, dob, password } = bene;
@@ -1243,25 +1061,16 @@ apiRouter.post('/users/bulk-beneficiaries', async (req, res) => {
                 continue;
             }
 
-            // --- Step 1: Upsert into `govtbeneficiaries` parent table FIRST ---
-            // This ensures the foreign key constraint is met before touching the `users` table.
-            // ticketClaimed is reset to 0 to allow re-booking if needed in a new scheme.
             await connection.query(
                 `INSERT INTO govtbeneficiaries (id, govtExamRegistrationNumber, phone, ticketClaimed) VALUES (?, ?, ?, 0)
                  ON DUPLICATE KEY UPDATE phone = VALUES(phone), ticketClaimed = 0`,
                 [uuidv4(), govtExamRegistrationNumber, phone]
             );
             
-            // --- Step 2: Handle the corresponding record in the `users` table ---
-            
-            // Check if a user is already linked to this beneficiary registration number
             const [existingBeneUsers] = await connection.query('SELECT * FROM users WHERE govtExamRegistrationNumber = ?', [govtExamRegistrationNumber]);
 
             if (existingBeneUsers.length > 0) {
-                // --- UPDATE PATH: User is already a known beneficiary ---
                 const userToUpdate = existingBeneUsers[0];
-                
-                // If phone is changing, check for conflicts with other users
                 if (userToUpdate.phone !== phone) {
                     const [phoneConflict] = await connection.query('SELECT id FROM users WHERE phone = ? AND id != ?', [phone, userToUpdate.id]);
                     if (phoneConflict.length > 0) {
@@ -1270,42 +1079,26 @@ apiRouter.post('/users/bulk-beneficiaries', async (req, res) => {
                         continue;
                     }
                 }
-                
-                // No conflicts, proceed with update.
                 await connection.query(
                     `UPDATE users SET fullName = ?, email = ?, phone = ?, dob = ?, isFreeTicketEligible = 'Yes', password = ? WHERE id = ?`,
                     [fullName, email || null, phone, dob || null, password || null, userToUpdate.id]
                 );
                 updatedCount++;
-
             } else {
-                // --- CREATE/CONVERT PATH: No user is linked to this beneficiary number yet ---
-                
-                // Check if the phone number is already registered to a different user account.
                 const [usersWithPhone] = await connection.query('SELECT * FROM users WHERE phone = ?', [phone]);
-                
                 if (usersWithPhone.length > 0) {
-                    // --- CONVERT PATH ---
-                    // A user exists with this phone, but is not yet linked to this registration number.
-                    // We will update their account to become this beneficiary.
                     const userToConvert = usersWithPhone[0];
-                    
-                    // Check if the existing user is already a beneficiary under a DIFFERENT registration number.
                     if (userToConvert.govtExamRegistrationNumber) {
                          console.log(`Skipping conversion for phone ${phone}: This phone number is already linked to a different beneficiary (${userToConvert.govtExamRegistrationNumber}).`);
                          skippedCount++;
                          continue;
                     }
-
-                    console.log(`Found existing user with phone ${phone}. Converting to beneficiary ${govtExamRegistrationNumber}.`);
                     await connection.query(
                         `UPDATE users SET fullName = ?, email = ?, dob = ?, isFreeTicketEligible = 'Yes', govtExamRegistrationNumber = ?, password = ? WHERE id = ?`,
                         [fullName, email || null, dob || null, govtExamRegistrationNumber, password || null, userToConvert.id]
                     );
                     updatedCount++;
                 } else {
-                    // --- CREATE NEW USER PATH ---
-                    // Both registration number and phone are new. Create a fresh user record.
                     const userId = uuidv4();
                     await connection.query(
                         `INSERT INTO users (id, fullName, email, phone, password, role, govtExamRegistrationNumber, isFreeTicketEligible, dob)
@@ -1316,15 +1109,8 @@ apiRouter.post('/users/bulk-beneficiaries', async (req, res) => {
                 }
             }
         }
-
         await connection.commit();
-        res.status(201).json({ 
-            message: 'Bulk user processing completed.',
-            created: createdCount,
-            updated: updatedCount,
-            skipped: skippedCount
-        });
-
+        res.status(201).json({ message: 'Bulk user processing completed.', created: createdCount, updated: updatedCount, skipped: skippedCount });
     } catch (error) {
         await connection.rollback();
         handleDBError(res, error, 'bulkCreateBeneficiaries');
@@ -1333,17 +1119,13 @@ apiRouter.post('/users/bulk-beneficiaries', async (req, res) => {
     }
 });
 
-
-// [GET] /api/users
-apiRouter.get('/users', async (req, res) => {
+apiRouter.get('/users', requireSubAdminOrAdmin, async (req, res) => {
     try {
         const [users] = await dbPool.query("SELECT id, fullName, email, phone, role FROM users ORDER BY role, fullName");
         const [subAdminDistricts] = await dbPool.query("SELECT userId, district FROM subadmindistricts");
 
         const districtsMap = subAdminDistricts.reduce((acc, row) => {
-            if (!acc[row.userId]) {
-                acc[row.userId] = [];
-            }
+            if (!acc[row.userId]) acc[row.userId] = [];
             acc[row.userId].push(row.district);
             return acc;
         }, {});
@@ -1359,8 +1141,7 @@ apiRouter.get('/users', async (req, res) => {
     }
 });
 
-// [POST] /api/users/subadmin
-apiRouter.post('/users/subadmin', async (req, res) => {
+apiRouter.post('/users/subadmin', requireAdmin, async (req, res) => {
     const { fullName, email, phone, password, assignedDistricts } = req.body;
     if (!fullName || !phone || !password || !Array.isArray(assignedDistricts)) {
         return res.status(400).json({ message: 'Full name, phone, password, and assigned districts are required.' });
@@ -1370,18 +1151,12 @@ apiRouter.post('/users/subadmin', async (req, res) => {
     try {
         await connection.beginTransaction();
         
-        // Check if any of the assigned districts are already taken
         if (assignedDistricts.length > 0) {
             const placeholders = assignedDistricts.map(() => '?').join(',');
-            const [existingAssignments] = await connection.query(
-                `SELECT district FROM subadmindistricts WHERE district IN (${placeholders})`,
-                assignedDistricts
-            );
-
+            const [existingAssignments] = await connection.query(`SELECT district FROM subadmindistricts WHERE district IN (${placeholders})`, assignedDistricts);
             if (existingAssignments.length > 0) {
                 const takenDistricts = existingAssignments.map(d => d.district).join(', ');
-                await connection.rollback();
-                connection.release();
+                await connection.rollback(); connection.release();
                 return res.status(409).json({ message: `The following districts are already assigned to another sub-admin: ${takenDistricts}` });
             }
         }
@@ -1389,15 +1164,10 @@ apiRouter.post('/users/subadmin', async (req, res) => {
         const userId = uuidv4();
         const newUser = { id: userId, fullName, email, phone, password, role: 'SUB_ADMIN' };
 
-        await connection.query(
-          'INSERT INTO users (id, fullName, email, phone, password, role) VALUES (?, ?, ?, ?, ?, ?)',
-          [newUser.id, newUser.fullName, newUser.email, newUser.phone, newUser.password, newUser.role]
-        );
+        await connection.query('INSERT INTO users (id, fullName, email, phone, password, role) VALUES (?, ?, ?, ?, ?, ?)', [newUser.id, newUser.fullName, newUser.email, newUser.phone, newUser.password, newUser.role]);
 
         if (assignedDistricts.length > 0) {
-            const districtInsertPromises = assignedDistricts.map(district =>
-                connection.query('INSERT INTO subadmindistricts (userId, district) VALUES (?, ?)', [userId, district])
-            );
+            const districtInsertPromises = assignedDistricts.map(district => connection.query('INSERT INTO subadmindistricts (userId, district) VALUES (?, ?)', [userId, district]));
             await Promise.all(districtInsertPromises);
         }
 
@@ -1408,39 +1178,22 @@ apiRouter.post('/users/subadmin', async (req, res) => {
         res.status(201).json(userToReturn);
     } catch (error) {
         await connection.rollback();
-        if (error.code === 'ER_DUP_ENTRY') {
-            return res.status(409).json({ message: 'A user with this email or phone number already exists.' });
-        }
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'A user with this email or phone number already exists.' });
         handleDBError(res, error, 'createSubAdmin');
     } finally {
         connection.release();
     }
 });
 
-// [PUT] /api/users/admin/:id - For an admin to update any user's profile
-apiRouter.put('/users/admin/:id', async (req, res) => {
-    const { id } = req.params; // user to edit
-    const { adminId, ...updateData } = req.body;
-
-    if (!adminId) {
-        return res.status(403).json({ message: 'Admin authentication is required.' });
-    }
-
+apiRouter.put('/users/admin/:id', requireAdmin, async (req, res) => {
+    const { id } = req.params;
+    const updateData = req.body;
     let connection;
     try {
         connection = await dbPool.getConnection();
         await connection.beginTransaction();
-
-        // --- Authorization Check ---
-        const [adminRows] = await connection.query('SELECT role FROM users WHERE id = ?', [adminId]);
-        if (adminRows.length === 0 || adminRows[0].role !== 'ADMIN') {
-            await connection.rollback();
-            return res.status(403).json({ message: 'Permission denied. This action is for administrators only.' });
-        }
         
         const { fullName, email, phone, gender, password, dob } = updateData;
-
-        // Dynamic query building
         const fieldsToUpdate = { fullName, email, phone, gender, dob };
         let sql = 'UPDATE users SET ';
         const params = [];
@@ -1460,8 +1213,7 @@ apiRouter.put('/users/admin/:id', async (req, res) => {
         }
 
         if (params.length === 0) {
-            await connection.rollback();
-            return res.status(400).json({ message: 'No fields to update.' });
+            await connection.rollback(); return res.status(400).json({ message: 'No fields to update.' });
         }
 
         sql += ' WHERE id = ?';
@@ -1469,46 +1221,26 @@ apiRouter.put('/users/admin/:id', async (req, res) => {
         
         const [result] = await connection.query(sql, params);
         if (result.affectedRows === 0) {
-            await connection.rollback();
-            return res.status(404).json({ message: 'User to update not found.' });
+            await connection.rollback(); return res.status(404).json({ message: 'User to update not found.' });
         }
 
-        // Sync phone number to govtbeneficiaries if changed
-        if (phone) {
-            await connection.query(
-                `UPDATE govtbeneficiaries gb
-                 JOIN users u ON gb.govtExamRegistrationNumber = u.govtExamRegistrationNumber
-                 SET gb.phone = ?
-                 WHERE u.id = ?`,
-                 [phone, id]
-            );
-        }
-
+        if (phone) await connection.query(`UPDATE govtbeneficiaries gb JOIN users u ON gb.govtExamRegistrationNumber = u.govtExamRegistrationNumber SET gb.phone = ? WHERE u.id = ?`, [phone, id]);
         await connection.commit();
         
-        // Fetch and return updated user
         const [rows] = await connection.query('SELECT * FROM users WHERE id = ?', [id]);
-        if (rows.length === 0) {
-             return res.status(404).json({ message: 'User not found after update.' });
-        }
+        if (rows.length === 0) return res.status(404).json({ message: 'User not found after update.' });
         const { password: _, ...userToReturn } = rows[0];
-
         res.status(200).json(userToReturn);
-
     } catch (error) {
         if(connection) await connection.rollback();
-        if (error.code === 'ER_DUP_ENTRY') {
-            return res.status(409).json({ message: 'Email or phone number already in use by another account.' });
-        }
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'Email or phone number already in use by another account.' });
         handleDBError(res, error, 'adminUpdateUser');
     } finally {
         if (connection) connection.release();
     }
 });
 
-
-// [PUT] /api/users/subadmin/:id
-apiRouter.put('/users/subadmin/:id', async (req, res) => {
+apiRouter.put('/users/subadmin/:id', requireAdmin, async (req, res) => {
     const { id } = req.params;
     const { fullName, email, phone, password, gender, dob, assignedDistricts } = req.body;
 
@@ -1520,39 +1252,22 @@ apiRouter.put('/users/subadmin/:id', async (req, res) => {
     try {
         await connection.beginTransaction();
         
-        // Check if any of the assigned districts are already taken by another sub-admin
         if (assignedDistricts.length > 0) {
             const placeholders = assignedDistricts.map(() => '?').join(',');
-            const queryParams = [...assignedDistricts, id]; // Add user's own ID to exclude them from the check
-            const [existingAssignments] = await connection.query(
-                `SELECT district FROM subadmindistricts WHERE district IN (${placeholders}) AND userId != ?`,
-                queryParams
-            );
-
+            const [existingAssignments] = await connection.query(`SELECT district FROM subadmindistricts WHERE district IN (${placeholders}) AND userId != ?`, [...assignedDistricts, id]);
             if (existingAssignments.length > 0) {
                 const takenDistricts = existingAssignments.map(d => d.district).join(', ');
-                await connection.rollback();
-                connection.release();
+                await connection.rollback(); connection.release();
                 return res.status(409).json({ message: `The following districts are already assigned to another sub-admin: ${takenDistricts}` });
             }
         }
 
-
-        // Build the user update query dynamically
         const userFields = { fullName, email, phone, gender, dob };
-        const userUpdateParts = [];
-        const userParams = [];
-
+        const userUpdateParts = [], userParams = [];
         for (const [key, value] of Object.entries(userFields)) {
-            if (value !== undefined) {
-                userUpdateParts.push(`\`${key}\` = ?`);
-                userParams.push(value);
-            }
+            if (value !== undefined) { userUpdateParts.push(`\`${key}\` = ?`); userParams.push(value); }
         }
-        if (password) {
-            userUpdateParts.push('`password` = ?');
-            userParams.push(password);
-        }
+        if (password) { userUpdateParts.push('`password` = ?'); userParams.push(password); }
         
         if (userUpdateParts.length > 0) {
             const userUpdateSql = `UPDATE users SET ${userUpdateParts.join(', ')} WHERE id = ?`;
@@ -1560,23 +1275,11 @@ apiRouter.put('/users/subadmin/:id', async (req, res) => {
             await connection.query(userUpdateSql, userParams);
         }
 
-        // If phone number was changed, sync it to the govtbeneficiaries table
-        if (phone) {
-             await connection.query(
-                `UPDATE govtbeneficiaries gb
-                 JOIN users u ON gb.govtExamRegistrationNumber = u.govtExamRegistrationNumber
-                 SET gb.phone = ?
-                 WHERE u.id = ?`,
-                 [phone, id]
-            );
-        }
+        if (phone) await connection.query(`UPDATE govtbeneficiaries gb JOIN users u ON gb.govtExamRegistrationNumber = u.govtExamRegistrationNumber SET gb.phone = ? WHERE u.id = ?`, [phone, id]);
         
-        // Resync assigned districts
         await connection.query('DELETE FROM subadmindistricts WHERE userId = ?', [id]);
         if (assignedDistricts.length > 0) {
-            const districtInsertPromises = assignedDistricts.map(district =>
-                connection.query('INSERT INTO subadmindistricts (userId, district) VALUES (?, ?)', [id, district])
-            );
+            const districtInsertPromises = assignedDistricts.map(district => connection.query('INSERT INTO subadmindistricts (userId, district) VALUES (?, ?)', [id, district]));
             await Promise.all(districtInsertPromises);
         }
 
@@ -1584,30 +1287,24 @@ apiRouter.put('/users/subadmin/:id', async (req, res) => {
         res.status(200).json({ message: 'Sub-admin updated successfully.' });
     } catch (error) {
         await connection.rollback();
-        if (error.code === 'ER_DUP_ENTRY') {
-            return res.status(409).json({ message: 'Email or phone number already in use.' });
-        }
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'Email or phone number already in use.' });
         handleDBError(res, error, 'updateSubAdmin');
     } finally {
         connection.release();
     }
 });
 
-
-// [DELETE] /api/users/:id
-apiRouter.delete('/users/:id', async (req, res) => {
+apiRouter.delete('/users/:id', requireAdmin, async (req, res) => {
     const { id } = req.params;
     const connection = await dbPool.getConnection();
     try {
         await connection.beginTransaction();
         const [users] = await connection.query('SELECT role FROM users WHERE id = ?', [id]);
         if (users.length === 0) {
-            await connection.rollback();
-            return res.status(404).json({ message: 'User not found.' });
+            await connection.rollback(); return res.status(404).json({ message: 'User not found.' });
         }
         if (users[0].role !== 'SUB_ADMIN') {
-            await connection.rollback();
-            return res.status(403).json({ message: 'Only sub-admin accounts can be deleted.' });
+            await connection.rollback(); return res.status(403).json({ message: 'Only sub-admin accounts can be deleted.' });
         }
         
         await connection.query('DELETE FROM subadmindistricts WHERE userId = ?', [id]);
@@ -1623,116 +1320,66 @@ apiRouter.delete('/users/:id', async (req, res) => {
     }
 });
 
-// [GET] /api/analytics/revenue
-apiRouter.get('/analytics/revenue', async (req, res) => {
-    const { userId } = req.query;
+apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => {
+    const user = req.user;
     let assignedDistricts = [];
     const queryParams = [];
 
     try {
-        // Fetch assigned districts for sub-admins
-        if (userId) {
-            const [districtRows] = await dbPool.query(
-                'SELECT district FROM subadmindistricts WHERE userId = ?',
-                [userId]
-            );
-            assignedDistricts = districtRows.map(r => r.district);
-
+        if (user.role === 'SUB_ADMIN') {
+            assignedDistricts = user.assignedDistricts || [];
             if (assignedDistricts.length === 0) {
-                return res.json({
-                    summary: { totalRevenue: 0, totalPaidBookings: 0, totalFreeTickets: 0, totalBookings: 0 },
-                    byDistrict: [],
-                    byRoute: [],
-                });
+                return res.json({ summary: { totalRevenue: 0, totalPaidBookings: 0, totalFreeTickets: 0, totalBookings: 0 }, byDistrict: [], byRoute: [] });
             }
         }
 
-        // --- District-level aggregation ---
         let districtQuery = `
-            SELECT
-                rs.stopName AS district,
-                SUM(b.fare) AS revenue,
-                SUM(CASE WHEN b.isFreeTicket = 0 THEN 1 ELSE 0 END) AS paidBookings,
-                SUM(CASE WHEN b.isFreeTicket = 1 THEN 1 ELSE 0 END) AS freeTickets
-            FROM bookings b
-            JOIN routestops rs ON b.scheduleId = rs.scheduleId
-            WHERE rs.stopOrder = 0 AND rs.stopName IS NOT NULL AND TRIM(rs.stopName) <> ''
-        `;
+            SELECT rs.stopName AS district, SUM(b.fare) AS revenue,
+                   SUM(CASE WHEN b.isFreeTicket = 0 THEN 1 ELSE 0 END) AS paidBookings,
+                   SUM(CASE WHEN b.isFreeTicket = 1 THEN 1 ELSE 0 END) AS freeTickets
+            FROM bookings b JOIN routestops rs ON b.scheduleId = rs.scheduleId
+            WHERE rs.stopOrder = 0 AND rs.stopName IS NOT NULL AND TRIM(rs.stopName) <> ''`;
 
         if (assignedDistricts.length > 0) {
             districtQuery += ` AND rs.stopName IN (?)`;
             queryParams.push(assignedDistricts);
         }
-
         districtQuery += ` GROUP BY rs.stopName ORDER BY revenue DESC`;
 
         const [districtData] = await dbPool.query(districtQuery, queryParams);
+        const byDistrict = districtData.map(d => ({
+            district: d.district,
+            revenue: parseFloat(d.revenue) || 0,
+            paidBookings: parseInt(d.paidBookings, 10) || 0,
+            freeTickets: parseInt(d.freeTickets, 10) || 0,
+            totalBookings: (parseInt(d.paidBookings, 10) || 0) + (parseInt(d.freeTickets, 10) || 0),
+        }));
 
-        const byDistrict = districtData.map(d => {
-            const paid = parseInt(d.paidBookings, 10) || 0;
-            const free = parseInt(d.freeTickets, 10) || 0;
-            return {
-                district: d.district,
-                revenue: parseFloat(d.revenue) || 0,
-                paidBookings: paid,
-                freeTickets: free,
-                totalBookings: paid + free,
-            };
-        });
-
-        // --- Summary ---
         const summary = byDistrict.reduce((acc, item) => {
-            acc.totalRevenue += item.revenue;
-            acc.totalPaidBookings += item.paidBookings;
-            acc.totalFreeTickets += item.freeTickets;
-            acc.totalBookings += item.totalBookings;
+            acc.totalRevenue += item.revenue; acc.totalPaidBookings += item.paidBookings;
+            acc.totalFreeTickets += item.freeTickets; acc.totalBookings += item.totalBookings;
             return acc;
-        }, {
-            totalRevenue: 0,
-            totalPaidBookings: 0,
-            totalFreeTickets: 0,
-            totalBookings: 0
-        });
+        }, { totalRevenue: 0, totalPaidBookings: 0, totalFreeTickets: 0, totalBookings: 0 });
 
         const responsePayload = { summary, byDistrict };
 
-        // --- Route-level aggregation if sub-admin ---
         if (assignedDistricts.length > 0) {
             const routeQuery = `
-                SELECT
-                    b.scheduleId,
-                    s.busName,
-                    (SELECT stopName FROM routestops WHERE scheduleId = b.scheduleId AND stopOrder = 0 LIMIT 1) AS origin,
-                    (SELECT stopName FROM routestops WHERE scheduleId = b.scheduleId ORDER BY stopOrder DESC LIMIT 1) AS destination,
-                    SUM(b.fare) AS revenue,
-                    COUNT(b.id) AS totalBookings
-                FROM bookings b
-                JOIN schedules s ON b.scheduleId = s.id
-                WHERE (
-                    SELECT stopName
-                    FROM routestops
-                    WHERE scheduleId = b.scheduleId AND stopOrder = 0 LIMIT 1
-                ) IN (?)
-                GROUP BY b.scheduleId, s.busName
-                ORDER BY revenue DESC
-            `;
-
+                SELECT b.scheduleId, s.busName,
+                       (SELECT stopName FROM routestops WHERE scheduleId = b.scheduleId AND stopOrder = 0 LIMIT 1) AS origin,
+                       (SELECT stopName FROM routestops WHERE scheduleId = b.scheduleId ORDER BY stopOrder DESC LIMIT 1) AS destination,
+                       SUM(b.fare) AS revenue, COUNT(b.id) AS totalBookings
+                FROM bookings b JOIN schedules s ON b.scheduleId = s.id
+                WHERE (SELECT stopName FROM routestops WHERE scheduleId = b.scheduleId AND stopOrder = 0 LIMIT 1) IN (?)
+                GROUP BY b.scheduleId, s.busName ORDER BY revenue DESC`;
             const [routeData] = await dbPool.query(routeQuery, [assignedDistricts]);
-
-            responsePayload.byRoute = routeData.map(r => ({
-                ...r,
-                revenue: parseFloat(r.revenue) || 0,
-                totalBookings: parseInt(r.totalBookings, 10) || 0
-            }));
+            responsePayload.byRoute = routeData.map(r => ({ ...r, revenue: parseFloat(r.revenue) || 0, totalBookings: parseInt(r.totalBookings, 10) || 0 }));
         }
-
         res.json(responsePayload);
-
     } catch (error) {
         handleDBError(res, error, 'getRevenueAnalytics');
     }
 });
-
 
 app.use('/api', apiRouter);
 

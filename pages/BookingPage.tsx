@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
@@ -366,7 +367,6 @@ export const BookingPage: React.FC = () => {
         let bookingId = '';
         if (mode === 'free') {
             const res = await api.bookFreeSeats(
-                user.id,
                 scheduleId,
                 selectedSeats,
                 userOrigin || schedule.origin,
@@ -390,7 +390,6 @@ export const BookingPage: React.FC = () => {
             });
 
             const res = await api.bookSeats(
-                user.id, 
                 scheduleId, 
                 seatsToBook,
                 userOrigin || schedule.origin, 

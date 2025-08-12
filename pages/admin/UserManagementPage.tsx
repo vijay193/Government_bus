@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
@@ -7,14 +8,18 @@ import type { User } from '../../types';
 import { UserRole } from '../../types';
 import { Users, PlusCircle, Edit, Trash2, Shield, User as UserIcon } from 'lucide-react';
 import { SubAdminFormModal } from '../../components/admin/SubAdminFormModal';
+import { EditUserModal } from '../../components/admin/EditUserModal';
 import { useAuth } from '../../hooks/useAuth';
 
 export const AdminUserManagementPage: React.FC = () => {
     const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    
     const [isSubAdminModalOpen, setIsSubAdminModalOpen] = useState(false);
+    const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
+    
     const { user: loggedInUser } = useAuth();
 
     const fetchUsers = useCallback(async () => {
@@ -51,13 +56,18 @@ export const AdminUserManagementPage: React.FC = () => {
         setIsSubAdminModalOpen(true);
     };
     
-    const handleOpenEditSubAdminModal = (user: User) => {
+    const handleOpenEditModal = (user: User) => {
         setEditingUser(user);
-        setIsSubAdminModalOpen(true);
+        if (user.role === UserRole.SUB_ADMIN) {
+            setIsSubAdminModalOpen(true);
+        } else if (user.role === UserRole.USER) {
+            setIsUserModalOpen(true);
+        }
     };
     
     const handleCloseModals = () => {
         setIsSubAdminModalOpen(false);
+        setIsUserModalOpen(false);
         setEditingUser(null);
     };
 
@@ -144,14 +154,16 @@ export const AdminUserManagementPage: React.FC = () => {
                                             ) : 'N/A'}
                                         </td>
                                         <td>
-                                            {(loggedInUser?.role === UserRole.ADMIN && user.role === UserRole.SUB_ADMIN) && (
+                                            {loggedInUser?.role === UserRole.ADMIN && (
                                                 <div className="user-management__actions">
-                                                    <Button variant="secondary" onClick={() => handleOpenEditSubAdminModal(user)} className="user-management__action-btn">
+                                                    <Button variant="secondary" onClick={() => handleOpenEditModal(user)} className="user-management__action-btn">
                                                         <Edit size={16} />
                                                     </Button>
-                                                    <Button variant="danger" onClick={() => handleDeleteUser(user.id)} className="user-management__action-btn">
-                                                        <Trash2 size={16} />
-                                                    </Button>
+                                                    {user.role === UserRole.SUB_ADMIN && (
+                                                        <Button variant="danger" onClick={() => handleDeleteUser(user.id)} className="user-management__action-btn">
+                                                            <Trash2 size={16} />
+                                                        </Button>
+                                                    )}
                                                 </div>
                                             )}
                                         </td>
@@ -163,9 +175,18 @@ export const AdminUserManagementPage: React.FC = () => {
                 )}
             </Card>
 
-            {isSubAdminModalOpen && (
+            {isSubAdminModalOpen && editingUser?.role === UserRole.SUB_ADMIN && (
                 <SubAdminFormModal
                     isOpen={isSubAdminModalOpen}
+                    onClose={handleCloseModals}
+                    onSave={handleSaveSuccess}
+                    userToEdit={editingUser}
+                />
+            )}
+            
+            {isUserModalOpen && editingUser?.role === UserRole.USER && (
+                 <EditUserModal
+                    isOpen={isUserModalOpen}
                     onClose={handleCloseModals}
                     onSave={handleSaveSuccess}
                     userToEdit={editingUser}

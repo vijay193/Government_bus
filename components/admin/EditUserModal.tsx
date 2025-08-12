@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { Input } from '../common/Input';
@@ -61,7 +62,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, o
     }
     
     try {
-      await api.adminUpdateUser(userToEdit.id, updateData, adminUser.id);
+      await api.adminUpdateUser(userToEdit.id, updateData);
       onSave();
     } catch (err) {
         const message = err instanceof Error ? err.message : "An unexpected error occurred.";
