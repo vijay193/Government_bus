@@ -23,8 +23,8 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
 
         const formatTime = (timeStr?: string | null) => timeStr ? timeStr.substring(0, 5) : 'N/A';
 
-        const originStop = schedule.fullRouteStops.find(s => s.name === booking.origin);
-        const destStop = schedule.fullRouteStops.find(s => s.name === booking.destination);
+        const originStop = schedule.fullRouteStops.find(s => s.name.trim().toLowerCase() === booking.origin.trim().toLowerCase());
+        const destStop = schedule.fullRouteStops.find(s => s.name.trim().toLowerCase() === booking.destination.trim().toLowerCase());
         const departureTime = formatTime(originStop?.departure);
         const arrivalTime = formatTime(destStop?.arrival);
         
@@ -132,8 +132,8 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
             const doc = new jsPDF();
             const formatTime = (timeStr?: string | null) => timeStr ? timeStr.substring(0, 5) : 'N/A';
 
-            const originStop = schedule.fullRouteStops.find(s => s.name === booking.origin);
-            const destStop = schedule.fullRouteStops.find(s => s.name === booking.destination);
+            const originStop = schedule.fullRouteStops.find(s => s.name.trim().toLowerCase() === booking.origin.trim().toLowerCase());
+            const destStop = schedule.fullRouteStops.find(s => s.name.trim().toLowerCase() === booking.destination.trim().toLowerCase());
             const departureTime = formatTime(originStop?.departure);
             const arrivalTime = formatTime(destStop?.arrival);
             
