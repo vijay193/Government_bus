@@ -2,7 +2,7 @@ import React from 'react';
 
 interface SeatProps {
   seatId: string;
-  status: 'available' | 'booked' | 'selected';
+  status: 'available' | 'booked' | 'selected' | 'disabled';
   onClick: (seatId: string) => void;
 }
 

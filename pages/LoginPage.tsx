@@ -36,8 +36,18 @@ export const LoginPage: React.FC = () => {
     }
   };
 
+  const validatePhone = (phoneNumber: string): boolean => {
+    if (phoneNumber.length !== 10) {
+      setError("Phone number must be exactly 10 digits.");
+      return false;
+    }
+    setError(null);
+    return true;
+  }
+
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validatePhone(phone)) return;
     if (!isCaptchaVerified) {
       setError("Please complete the captcha.");
       return;
@@ -59,6 +69,7 @@ export const LoginPage: React.FC = () => {
   };
 
   const handleSendOtp = async () => {
+    if (!validatePhone(phone)) return;
     setIsLoading(true);
     setError(null);
     setSuccessMessage(null);
@@ -76,6 +87,7 @@ export const LoginPage: React.FC = () => {
 
   const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validatePhone(phone)) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -95,7 +107,7 @@ export const LoginPage: React.FC = () => {
   const renderPasswordForm = () => (
     <form onSubmit={handlePasswordSubmit} className="auth-form">
       {error && <p className="auth-form__error">{error}</p>}
-      <Input id="phone" label="Phone Number" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+      <Input id="phone" label="Phone Number" type="tel" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))} required maxLength={10} pattern="\d{10}" title="Please enter a 10-digit phone number."/>
       <Input id="password" label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       <Captcha onVerify={setIsCaptchaVerified} />
       <Button type="submit" isLoading={isLoading} disabled={!isCaptchaVerified || isLoading}>
@@ -113,9 +125,12 @@ export const LoginPage: React.FC = () => {
         label="Phone Number"
         type="tel"
         value={phone}
-        onChange={(e) => setPhone(e.target.value)}
+        onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
         required
         disabled={isOtpSent}
+        maxLength={10} 
+        pattern="\d{10}" 
+        title="Please enter a 10-digit phone number."
       />
       {isOtpSent ? (
         <>

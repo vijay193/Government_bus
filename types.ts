@@ -158,3 +158,26 @@ export interface ParsedBeneficiary {
     dob?: string;
     password?: string;
 }
+
+// --- Voice Assistant Types ---
+export type CommandType =
+  | 'SEARCH_ROUTE'
+  | 'SEARCH_DISTRICT'
+  | 'CHECK_VIA'
+  | 'FILTER_BY_TIME'
+  | 'FILTER_FARE_LOW'
+  | 'FILTER_STOPS_LOW'
+  | 'RESET'
+  | 'UNKNOWN';
+
+export interface ParsedCommand {
+  type: CommandType;
+  payload?: {
+    origin?: string;
+    destination?: string;
+    district?: string;
+    stopName?: string;
+    startTime?: number;
+    endTime?: number;
+  };
+}

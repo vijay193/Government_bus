@@ -7,6 +7,7 @@ interface SeatLayoutProps {
   bookedSeats: string[];
   selectedSeats: string[];
   onSeatClick: (seatId: string) => void;
+  disableSelection: boolean;
 }
 
 const generateSeats = (rows: number, cols: number, letters: string[]) => {
@@ -21,10 +22,11 @@ const generateSeats = (rows: number, cols: number, letters: string[]) => {
     return seats;
 }
 
-export const SeatLayout: React.FC<SeatLayoutProps> = ({ layout, bookedSeats, selectedSeats, onSeatClick }) => {
-  const getSeatStatus = (seatId: string) => {
+export const SeatLayout: React.FC<SeatLayoutProps> = ({ layout, bookedSeats, selectedSeats, onSeatClick, disableSelection }) => {
+  const getSeatStatus = (seatId: string): 'available' | 'booked' | 'selected' | 'disabled' => {
     if (selectedSeats.includes(seatId)) return 'selected';
     if (bookedSeats.includes(seatId)) return 'booked';
+    if (disableSelection) return 'disabled';
     return 'available';
   };
 
@@ -66,6 +68,7 @@ export const SeatLayout: React.FC<SeatLayoutProps> = ({ layout, bookedSeats, sel
             <div className="seat-layout__legend-item"><div className="seat-layout__legend-swatch swatch--available"></div><span>Available</span></div>
             <div className="seat-layout__legend-item"><div className="seat-layout__legend-swatch swatch--selected"></div><span>Selected</span></div>
             <div className="seat-layout__legend-item"><div className="seat-layout__legend-swatch swatch--booked"></div><span>Booked</span></div>
+            <div className="seat-layout__legend-item"><div className="seat-layout__legend-swatch swatch--disabled"></div><span>Disabled</span></div>
         </div>
     </div>
   );

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
@@ -15,6 +16,7 @@ import { SEAT_PRICE } from '../constants';
 import { Ticket, X, CheckCircle, Ban, Gift, ArrowRight, Download, Baby, Accessibility, ShieldAlert } from 'lucide-react';
 
 type BookingType = 'normal' | 'free' | 'child' | 'senior';
+const MAX_SEATS = 5;
 
 interface ModalState {
   isOpen: boolean;
@@ -96,9 +98,19 @@ export const BookingPage: React.FC = () => {
   }, [scheduleId]);
 
   const handleSeatClick = useCallback((seatId: string) => {
-    setSelectedSeats(prev => 
-      prev.includes(seatId) ? prev.filter(s => s !== seatId) : [...prev, seatId]
-    );
+    setError(null);
+    setSelectedSeats(prev => {
+      const isSelected = prev.includes(seatId);
+      if (isSelected) {
+        return prev.filter(s => s !== seatId);
+      }
+      if (prev.length >= MAX_SEATS) {
+        setError(`You can select a maximum of ${MAX_SEATS} seats.`);
+        setTimeout(() => setError(null), 3000);
+        return prev;
+      }
+      return [...prev, seatId];
+    });
   }, []);
 
   const pricePerSeat = Number(fareFromState ?? schedule?.fare ?? SEAT_PRICE);
@@ -251,6 +263,7 @@ export const BookingPage: React.FC = () => {
               bookedSeats={bookedSeats}
               selectedSeats={selectedSeats}
               onSeatClick={handleSeatClick}
+              disableSelection={selectedSeats.length >= MAX_SEATS}
             />
         </div>
         <div className="booking-page__summary-area">
@@ -274,7 +287,7 @@ export const BookingPage: React.FC = () => {
                  <div className="booking-page__summary-details">
                     <div className="booking-page__summary-row">
                         <span className="booking-page__summary-label">Selected Seats:</span>
-                        <span className="booking-page__summary-value">{selectedSeats.length}</span>
+                        <span className="booking-page__summary-value">{selectedSeats.length} / {MAX_SEATS}</span>
                     </div>
                     <div className="booking-page__summary-row">
                         <span className="booking-page__summary-label">Price per Seat:</span>
@@ -289,6 +302,10 @@ export const BookingPage: React.FC = () => {
 
             {bookingType === 'free' && (
                 <div className="booking-page__form-section">
+                    <div className="booking-page__summary-row" style={{marginBottom: '1rem'}}>
+                        <span className="booking-page__summary-label">Selected Seats:</span>
+                        <span className="booking-page__summary-value">{selectedSeats.length} / {MAX_SEATS}</span>
+                    </div>
                     <p className="booking-page__info-notice notice-free">Verify eligibility for a free ticket via special govt. announcement.</p>
                     <Input id="registrationNumber" label="Registration Number" value={freeBookingDetails.registrationNumber} onChange={handleFreeBookingFormChange} required />
                     <Input id="phone" label="Registered Phone Number" type="tel" value={freeBookingDetails.phone} onChange={handleFreeBookingFormChange} required />
@@ -314,6 +331,10 @@ export const BookingPage: React.FC = () => {
                         pattern="\d{12}"
                     />
                      <div className="booking-page__summary-details" style={{marginTop: '1rem'}}>
+                         <div className="booking-page__summary-row">
+                            <span className="booking-page__summary-label">Selected Seats:</span>
+                            <span className="booking-page__summary-value">{selectedSeats.length} / {MAX_SEATS}</span>
+                        </div>
                         <div className="booking-page__summary-row">
                             <span className="booking-page__summary-label">Original Fare:</span>
                             <span className="booking-page__summary-value" style={{textDecoration: 'line-through'}}>₹{(selectedSeats.length * pricePerSeat).toFixed(2)}</span>

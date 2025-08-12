@@ -1,4 +1,5 @@
 
+
 /* 
    ========================================
    Haryana Bus - Main Stylesheet
@@ -627,6 +628,13 @@ button {
     cursor: not-allowed;
     opacity: 0.8;
 }
+.seat--disabled {
+    background-color: var(--color-secondary);
+    border-color: var(--color-border-dark);
+    color: var(--color-text-secondary);
+    cursor: not-allowed;
+    opacity: 0.5;
+}
 .seat--selected {
     background-color: var(--color-primary);
     border-color: var(--color-primary-dark);
@@ -697,6 +705,12 @@ button {
     background-color: var(--color-secondary);
     border: 2px solid var(--color-border-dark);
 }
+.swatch--disabled {
+    background-color: var(--color-secondary);
+    border: 2px solid var(--color-border-dark);
+    opacity: 0.5;
+}
+
 
 /* --- Schedule Card --- */
 .schedule-card__container {
@@ -2125,4 +2139,202 @@ button {
 .pass-card__hologram:hover {
     animation: spin 4s linear infinite;
     opacity: 0.8;
+}
+
+/* Voice Assistant Modal */
+.voice-assistant-modal {
+    padding: 0;
+}
+.voice-assistant__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--color-border);
+}
+.voice-assistant__header h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--color-primary);
+}
+.voice-assistant__header button {
+    background: none;
+    border: none;
+    padding: 0.5rem;
+    border-radius: var(--border-radius-full);
+}
+.voice-assistant__header button:hover {
+    background-color: var(--color-bg-secondary);
+}
+
+.voice-assistant__body {
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+.voice-assistant__main-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+}
+@media (min-width: 640px) {
+    .voice-assistant__main-controls {
+        flex-direction: row;
+    }
+}
+.voice-assistant__mic-btn {
+    flex-shrink: 0;
+    width: 6rem;
+    height: 6rem;
+    border-radius: var(--border-radius-full);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-inverted);
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.voice-assistant__mic-btn:hover:not(:disabled) {
+    transform: scale(1.05);
+}
+.voice-assistant__mic-btn:disabled {
+    cursor: not-allowed;
+}
+.voice-assistant__mic-btn.status--idle {
+    background-color: var(--color-primary);
+}
+.voice-assistant__mic-btn.status--listening {
+    background-color: var(--color-danger);
+    box-shadow: 0 0 0 8px rgba(220, 38, 38, 0.4);
+}
+.voice-assistant__mic-btn.status--processing {
+    background-color: var(--color-text-secondary);
+}
+.voice-assistant__mic-btn.status--responding {
+    background-color: var(--color-success);
+}
+.voice-assistant__mic-icon--listening {
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+.voice-assistant__display {
+    width: 100%;
+}
+.voice-assistant__transcript {
+    min-height: 2.5em; /* Reserve space */
+    background-color: var(--color-bg-secondary);
+    padding: 0.75rem 1rem;
+    border-radius: var(--border-radius-md);
+    font-style: italic;
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+}
+.voice-assistant__response {
+    margin-top: 1rem;
+    background-color: var(--color-primary-light);
+    color: var(--color-primary-dark);
+    font-weight: 500;
+    padding: 1rem;
+    border-radius: var(--border-radius-md);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.voice-assistant__replay-btn {
+    background: none;
+    border: none;
+    padding: 0.25rem;
+    border-radius: var(--border-radius-full);
+    color: var(--color-primary-dark);
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+.voice-assistant__replay-btn:hover {
+    opacity: 1;
+}
+.voice-assistant__error {
+    color: var(--color-danger);
+    text-align: center;
+}
+.voice-assistant__suggestions {
+    border-top: 1px solid var(--color-border);
+    padding-top: 1.5rem;
+    text-align: center;
+}
+.voice-assistant__suggestions h4 {
+    color: var(--color-text-secondary);
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+}
+.voice-assistant__suggestions ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+.voice-assistant__suggestions li {
+    background-color: var(--color-bg-secondary);
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--border-radius-full);
+    font-size: 0.875rem;
+    color: var(--color-text-primary);
+}
+.voice-assistant__unsupported {
+    text-align: center;
+    color: var(--color-warning-text);
+}
+.voice-assistant__unsupported svg {
+    margin: 0 auto 1rem;
+    color: var(--color-warning);
+}
+.voice-assistant__unsupported h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+/* Homepage voice button */
+.home-page__form-main {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+@media (min-width: 768px) {
+    .home-page__form-main {
+        flex-direction: row;
+        align-items: flex-end;
+        gap: 1rem;
+    }
+    .home-page__search-button {
+        flex-shrink: 0;
+    }
+}
+.home-page__voice-btn {
+    width: 100%;
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border: 2px dashed var(--color-border-dark);
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    border-radius: var(--border-radius-md);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    transition: all 0.2s;
+}
+.home-page__voice-btn:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+    background-color: var(--color-primary-light);
 }
