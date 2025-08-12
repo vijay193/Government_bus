@@ -1,5 +1,6 @@
 
 
+
 export enum UserRole {
     USER = 'USER',
     ADMIN = 'ADMIN',
@@ -71,7 +72,7 @@ export interface Booking {
     seats: BookedSeat[];
     origin: string; // The user's boarding point
     destination: string; // The user's deboarding point
-    discountType: 'NONE' | 'CHILD' | 'SENIOR';
+    discountType: 'NONE' | 'CHILD' | 'SENIOR' | 'MIXED';
     aadhaarNumber: string | null;
 }
 
@@ -85,7 +86,7 @@ export interface UserBooking {
     origin: string;
     destination: string;
     seatIds: string[];
-    discountType: 'NONE' | 'CHILD' | 'SENIOR';
+    discountType: 'NONE' | 'CHILD' | 'SENIOR' | 'MIXED';
     aadhaarNumber: string | null;
 }
 
@@ -180,4 +181,10 @@ export interface ParsedCommand {
     startTime?: number;
     endTime?: number;
   };
+}
+
+export interface SeatBookingInfo {
+    seatId: string;
+    type: 'NORMAL' | 'CHILD' | 'SENIOR';
+    aadhaarNumber?: string;
 }

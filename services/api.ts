@@ -1,5 +1,7 @@
 
-import type { Schedule, User, BusLocation, UserBooking, RevenueAnalyticsData, ParsedSchedule, ParsedStop, SeatLayout, ParsedBeneficiary, PassCard } from '../types';
+
+
+import type { Schedule, User, BusLocation, UserBooking, RevenueAnalyticsData, ParsedSchedule, ParsedStop, SeatLayout, ParsedBeneficiary, PassCard, SeatBookingInfo } from '../types';
 
 // This file now uses fetch() to communicate with a backend API.
 // The backend is not part of this project, but these functions are wired
@@ -116,11 +118,9 @@ export const api = {
     bookSeats: (
         userId: string, 
         scheduleId: string, 
-        seatIds: string[], 
+        seats: SeatBookingInfo[], 
         origin: string, 
-        destination: string, 
-        discountType: 'NONE' | 'CHILD' | 'SENIOR', 
-        aadhaarNumber?: string
+        destination: string
     ): Promise<{ bookingId: string }> => {
         return apiFetch<{ bookingId: string }>(`${API_BASE_URL}/bookings`, {
             method: 'POST',
@@ -128,11 +128,9 @@ export const api = {
             body: JSON.stringify({ 
                 userId, 
                 scheduleId, 
-                seatIds, 
+                seats,
                 origin, 
                 destination,
-                discountType,
-                aadhaarNumber
             }),
         });
     },

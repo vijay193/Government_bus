@@ -1,28 +1,81 @@
 
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 import { useAuth } from '../hooks/useAuth';
 import { api } from '../services/api';
-import type { Schedule } from '../types';
+import type { Schedule, SeatBookingInfo } from '../types';
 import { SeatLayout } from '../components/bus/SeatLayout';
 import { Button } from '../components/common/Button';
 import { Input } from '../components/common/Input';
 import { Card } from '../components/common/Card';
 import { Modal } from '../components/common/Modal';
 import { SEAT_PRICE } from '../constants';
-import { Ticket, X, CheckCircle, Ban, Gift, ArrowRight, Download, Baby, Accessibility, ShieldAlert } from 'lucide-react';
+import { Ticket, X, CheckCircle, Ban, Gift, ArrowRight, Download, Baby, Accessibility, ShieldAlert, Users, IndianRupee, Trash2 } from 'lucide-react';
 
-type BookingType = 'normal' | 'free' | 'child' | 'senior';
-const MAX_SEATS = 5;
+type BookingMode = 'paid' | 'free';
+type SeatType = 'normal' | 'child' | 'senior';
+
+interface SeatDetails {
+    [seatId: string]: {
+        type: SeatType;
+        aadhaar: string;
+    }
+}
 
 interface ModalState {
   isOpen: boolean;
   bookingId: string;
-  bookingType: BookingType;
+  bookingMode: BookingMode;
 }
+
+const SeatDetailsEditor: React.FC<{
+    seatId: string;
+    details: SeatDetails[string];
+    onDetailChange: (seatId: string, field: keyof SeatDetails[string], value: string) => void;
+    onRemove: (seatId: string) => void;
+    isDiscountEnabled: boolean;
+}> = ({ seatId, details, onDetailChange, onRemove, isDiscountEnabled }) => {
+    return (
+        <div className="seat-details-editor-card">
+            <div className="seat-details-editor-card__header">
+                <span className="seat-details-editor-card__seat-id">{seatId}</span>
+                <button onClick={() => onRemove(seatId)} className="seat-details-editor-card__remove-btn">
+                    <Trash2 size={16}/>
+                </button>
+            </div>
+            <div className="input-wrapper">
+                <label htmlFor={`type-${seatId}`} className="input-label">Ticket Type</label>
+                <select 
+                    id={`type-${seatId}`} 
+                    className="input-field"
+                    value={details.type}
+                    onChange={(e) => onDetailChange(seatId, 'type', e.target.value)}
+                >
+                    <option value="normal">Normal</option>
+                    {isDiscountEnabled && <option value="child">Child</option>}
+                    {isDiscountEnabled && <option value="senior">Senior</option>}
+                </select>
+            </div>
+            {(details.type === 'child' || details.type === 'senior') && (
+                <Input 
+                    id={`aadhaar-${seatId}`} 
+                    label="Aadhaar Number"
+                    value={details.aadhaar}
+                    onChange={(e) => onDetailChange(seatId, 'aadhaar', e.target.value.replace(/\D/g, '').slice(0, 12))}
+                    placeholder="Enter 12-digit number"
+                    maxLength={12}
+                    pattern="\d{12}"
+                    required
+                />
+            )}
+        </div>
+    );
+};
+
 
 export const BookingPage: React.FC = () => {
   const { scheduleId } = useParams<{ scheduleId: string }>();
@@ -34,14 +87,18 @@ export const BookingPage: React.FC = () => {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [bookedSeats, setBookedSeats] = useState<string[]>([]);
   const [selectedSeats, setSelectedSeats] = useState<string[]>([]);
+  const [seatDetails, setSeatDetails] = useState<SeatDetails>({});
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isBooking, setIsBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [modalState, setModalState] = useState<ModalState>({ isOpen: false, bookingId: '', bookingType: 'normal' });
-  const [bookingType, setBookingType] = useState<BookingType>('normal');
+  const [modalState, setModalState] = useState<ModalState>({ isOpen: false, bookingId: '', bookingMode: 'paid' });
+  const [mode, setMode] = useState<BookingMode>('paid');
+  
   const [freeBookingDetails, setFreeBookingDetails] = useState({ registrationNumber: '', phone: '' });
-  const [aadhaarNumber, setAadhaarNumber] = useState('');
   const [discounts, setDiscounts] = useState({ child: 40, senior: 50 });
+
+  const MAX_SEATS = useMemo(() => (mode === 'free' ? 1 : 5), [mode]);
 
   useEffect(() => {
     if (!scheduleId) {
@@ -89,7 +146,6 @@ export const BookingPage: React.FC = () => {
            });
        } catch(e) {
            console.error("Could not fetch discounts, using defaults.", e);
-           // Keep default discounts if API fails
        }
    }
 
@@ -97,35 +153,74 @@ export const BookingPage: React.FC = () => {
     fetchDiscounts();
   }, [scheduleId]);
 
+    const handleModeChange = (newMode: BookingMode) => {
+        setMode(newMode);
+        setSelectedSeats([]);
+        setSeatDetails({});
+        setError(null);
+    }
+
   const handleSeatClick = useCallback((seatId: string) => {
     setError(null);
-    setSelectedSeats(prev => {
-      const isSelected = prev.includes(seatId);
-      if (isSelected) {
-        return prev.filter(s => s !== seatId);
-      }
-      if (prev.length >= MAX_SEATS) {
-        setError(`You can select a maximum of ${MAX_SEATS} seats.`);
-        setTimeout(() => setError(null), 3000);
-        return prev;
-      }
-      return [...prev, seatId];
-    });
-  }, []);
+    const isSelected = selectedSeats.includes(seatId);
+
+    if (isSelected) {
+        setSelectedSeats(prev => prev.filter(s => s !== seatId));
+        setSeatDetails(prev => {
+            const newDetails = {...prev};
+            delete newDetails[seatId];
+            return newDetails;
+        });
+    } else {
+        if (selectedSeats.length >= MAX_SEATS) {
+            setError(`You can select a maximum of ${MAX_SEATS} seat(s) in ${mode} mode.`);
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
+        setSelectedSeats(prev => [...prev, seatId]);
+        if(mode === 'paid') {
+            setSeatDetails(prev => ({...prev, [seatId]: { type: 'normal', aadhaar: ''}}));
+        }
+    }
+  }, [selectedSeats.length, MAX_SEATS, mode]);
+  
+  const handleSeatDetailChange = (seatId: string, field: keyof SeatDetails[string], value: string) => {
+      setSeatDetails(prev => ({
+          ...prev,
+          [seatId]: {
+              ...prev[seatId],
+              [field]: value
+          }
+      }));
+  };
 
   const pricePerSeat = Number(fareFromState ?? schedule?.fare ?? SEAT_PRICE);
   
-  const discountMultiplier = useMemo(() => {
-    switch (bookingType) {
-        case 'child': return 1 - (discounts.child / 100);
-        case 'senior': return 1 - (discounts.senior / 100);
-        default: return 1;
-    }
-  }, [bookingType, discounts]);
+  const totalFare = useMemo(() => {
+    if (mode === 'free' || !schedule) return 0;
+    
+    return selectedSeats.reduce((total, seatId) => {
+        const details = seatDetails[seatId];
+        if (!details) return total;
 
-  const totalFare = selectedSeats.length * pricePerSeat * discountMultiplier;
+        let multiplier = 1;
+        if (details.type === 'child') multiplier = 1 - (discounts.child / 100);
+        if (details.type === 'senior') multiplier = 1 - (discounts.senior / 100);
+        
+        return total + (pricePerSeat * multiplier);
+    }, 0);
+  }, [selectedSeats, seatDetails, mode, schedule, pricePerSeat, discounts]);
 
-  const generatePdfReceipt = async (bookingId: string, type: BookingType) => {
+  const bookingSummary = useMemo(() => {
+      const summary = { normal: 0, child: 0, senior: 0 };
+      selectedSeats.forEach(seatId => {
+          const type = seatDetails[seatId]?.type;
+          if(type) summary[type]++;
+      });
+      return summary;
+  }, [selectedSeats, seatDetails]);
+
+  const generatePdfReceipt = async (bookingId: string) => {
     const doc = new jsPDF();
     
     doc.setFont("helvetica", "bold");
@@ -140,14 +235,13 @@ export const BookingPage: React.FC = () => {
     doc.text(`Booking Date: ${new Date().toLocaleString()}`, 20, 65);
     doc.text(`Seats: ${selectedSeats.join(', ')}`, 20, 75);
 
-    // QR Code Data
     const qrCodeData = JSON.stringify({
         bookingId: bookingId,
         passenger: user?.fullName,
         scheduleId: schedule?.id,
         seats: selectedSeats,
         route: `${userOrigin || schedule?.origin} to ${userDestination || schedule?.destination}`,
-        bookingType: type,
+        bookingType: mode,
     });
     const qrCodeDataURL = await QRCode.toDataURL(qrCodeData, { errorCorrectionLevel: 'H' });
     
@@ -157,16 +251,9 @@ export const BookingPage: React.FC = () => {
 
     doc.setFont("helvetica", "bold");
     let fareText = `Total Fare: INR ${totalFare.toFixed(2)}`;
-    if (type === 'free') fareText = `Total Fare: FREE (Govt. Special Announcement)`;
-    if (type === 'child') fareText += ` (Child Discount ${discounts.child}%)`;
-    if (type === 'senior') fareText += ` (Senior Discount ${discounts.senior}%)`;
-    doc.text(fareText, 20, 85);
+    if (mode === 'free') fareText = `Total Fare: FREE (Govt. Special Announcement)`;
+    doc.text(fareText, 20, 95);
     
-    if (['child', 'senior'].includes(type)) {
-        doc.setFont("helvetica", "normal");
-        doc.text(`Aadhaar No: XXXX XXXX ${aadhaarNumber.slice(-4)}`, 20, 95);
-    }
-
     doc.save(`GovernmentBus-Ticket-${bookingId}.pdf`);
   };
 
@@ -181,7 +268,7 @@ export const BookingPage: React.FC = () => {
 
     try {
         let bookingId = '';
-        if (bookingType === 'free') {
+        if (mode === 'free') {
             const res = await api.bookFreeSeats(
                 user.id,
                 scheduleId,
@@ -193,24 +280,24 @@ export const BookingPage: React.FC = () => {
             );
             bookingId = res.bookingId;
         } else {
-            const discountTypeForApi = (bookingType === 'child' || bookingType === 'senior') 
-                ? bookingType.toUpperCase() as 'CHILD' | 'SENIOR' 
-                : 'NONE';
-            
-            const aadhaarForApi = (bookingType === 'child' || bookingType === 'senior') ? aadhaarNumber : undefined;
-
+            const seatsToBook: SeatBookingInfo[] = selectedSeats.map(seatId => {
+                const details = seatDetails[seatId];
+                return {
+                    seatId: seatId,
+                    type: details.type.toUpperCase() as 'NORMAL' | 'CHILD' | 'SENIOR',
+                    aadhaarNumber: (details.type === 'child' || details.type === 'senior') ? details.aadhaar : undefined
+                };
+            });
             const res = await api.bookSeats(
                 user.id, 
                 scheduleId, 
-                selectedSeats, 
+                seatsToBook,
                 userOrigin || schedule.origin, 
-                userDestination || schedule.destination,
-                discountTypeForApi,
-                aadhaarForApi
+                userDestination || schedule.destination
             );
             bookingId = res.bookingId;
         }
-        setModalState({ isOpen: true, bookingId, bookingType });
+        setModalState({ isOpen: true, bookingId, bookingMode: mode });
     } catch (err) {
       const message = err instanceof Error ? err.message : "An internal server error occurred in createBooking.";
       setError(message);
@@ -221,19 +308,29 @@ export const BookingPage: React.FC = () => {
 
   const handleDownloadTicket = async () => {
     if (modalState.bookingId) {
-        await generatePdfReceipt(modalState.bookingId, modalState.bookingType);
+        await generatePdfReceipt(modalState.bookingId);
     }
   };
 
   const handleCloseModal = () => {
-    setModalState({ isOpen: false, bookingId: '', bookingType: 'normal' });
+    setModalState({ isOpen: false, bookingId: '', bookingMode: 'paid' });
     navigate('/');
   };
 
-  const isDiscountBooking = bookingType === 'child' || bookingType === 'senior';
-  const isConfirmButtonDisabled = selectedSeats.length === 0 || isBooking || 
-      (bookingType === 'free' && (!freeBookingDetails.registrationNumber || !freeBookingDetails.phone)) ||
-      (isDiscountBooking && aadhaarNumber.length !== 12);
+  const isConfirmButtonDisabled = useMemo(() => {
+    if (isBooking || selectedSeats.length === 0) return true;
+    if (mode === 'free') {
+        return !freeBookingDetails.registrationNumber || !freeBookingDetails.phone;
+    }
+    // For paid mode, check if all required aadhaars are filled
+    for(const seatId of selectedSeats) {
+        const details = seatDetails[seatId];
+        if ((details.type === 'child' || details.type === 'senior') && details.aadhaar.length !== 12) {
+            return true;
+        }
+    }
+    return false;
+  }, [isBooking, selectedSeats, mode, freeBookingDetails, seatDetails]);
 
 
   if (isLoading) return <div className="loader-overlay"><div className="page-loader"></div></div>;
@@ -271,79 +368,55 @@ export const BookingPage: React.FC = () => {
             <h2 className="booking-page__summary-title">Booking Summary</h2>
             
              <div className="booking-page__booking-type-toggle">
-                <button onClick={() => setBookingType('normal')} className={`booking-page__booking-type-btn ${bookingType === 'normal' ? 'booking-page__booking-type-btn--active-normal' : ''}`}>Normal</button>
-                {schedule.isDiscountEnabled && (
-                    <>
-                        <button onClick={() => setBookingType('child')} className={`booking-page__booking-type-btn ${bookingType === 'child' ? 'booking-page__booking-type-btn--active-child' : ''}`}><Baby size={18}/> Child</button>
-                        <button onClick={() => setBookingType('senior')} className={`booking-page__booking-type-btn ${bookingType === 'senior' ? 'booking-page__booking-type-btn--active-senior' : ''}`}><Accessibility size={18}/> Senior</button>
-                    </>
-                )}
+                <button onClick={() => handleModeChange('paid')} className={`booking-page__booking-type-btn ${mode === 'paid' ? 'booking-page__booking-type-btn--active-normal' : ''}`}><Users size={18}/> Paid Booking</button>
                 {schedule.isFreeBookingEnabled && (
-                    <button onClick={() => setBookingType('free')} className={`booking-page__booking-type-btn ${bookingType === 'free' ? 'booking-page__booking-type-btn--active-free' : ''}`}><Gift size={18}/> Free</button>
+                    <button onClick={() => handleModeChange('free')} className={`booking-page__booking-type-btn ${mode === 'free' ? 'booking-page__booking-type-btn--active-free' : ''}`}><Gift size={18}/> Free Ticket</button>
                 )}
             </div>
 
-            {bookingType === 'normal' && (
-                 <div className="booking-page__summary-details">
-                    <div className="booking-page__summary-row">
-                        <span className="booking-page__summary-label">Selected Seats:</span>
-                        <span className="booking-page__summary-value">{selectedSeats.length} / {MAX_SEATS}</span>
+            {mode === 'paid' && (
+                 <>
+                    <div className="booking-page__summary-details">
+                        <div className="booking-page__summary-row">
+                            <span className="booking-page__summary-label">Selected Seats:</span>
+                            <span className="booking-page__summary-value">{selectedSeats.length} / {MAX_SEATS}</span>
+                        </div>
                     </div>
-                    <div className="booking-page__summary-row">
-                        <span className="booking-page__summary-label">Price per Seat:</span>
-                        <span className="booking-page__summary-value">₹{pricePerSeat.toFixed(2)}</span>
+                    {selectedSeats.length > 0 && (
+                        <div className="booking-page__seat-details-container">
+                            {selectedSeats.map(seatId => (
+                                <SeatDetailsEditor 
+                                    key={seatId} 
+                                    seatId={seatId} 
+                                    details={seatDetails[seatId]}
+                                    onDetailChange={handleSeatDetailChange}
+                                    onRemove={handleSeatClick}
+                                    isDiscountEnabled={schedule.isDiscountEnabled ?? false}
+                                />
+                            ))}
+                        </div>
+                    )}
+                     <div className="booking-page__total-fare-breakdown">
+                        {bookingSummary.normal > 0 && <span>{bookingSummary.normal} Normal x ₹{pricePerSeat.toFixed(2)}</span>}
+                        {bookingSummary.child > 0 && <span>{bookingSummary.child} Child x ₹{(pricePerSeat * (1 - discounts.child/100)).toFixed(2)}</span>}
+                        {bookingSummary.senior > 0 && <span>{bookingSummary.senior} Senior x ₹{(pricePerSeat * (1 - discounts.senior/100)).toFixed(2)}</span>}
                     </div>
                     <div className="booking-page__total-fare">
                         <span className="booking-page__total-fare-label">Total Fare:</span>
                         <span className="booking-page__total-fare-value">₹{totalFare.toFixed(2)}</span>
                     </div>
-                </div>
+                </>
             )}
 
-            {bookingType === 'free' && (
+            {mode === 'free' && (
                 <div className="booking-page__form-section">
                     <div className="booking-page__summary-row" style={{marginBottom: '1rem'}}>
                         <span className="booking-page__summary-label">Selected Seats:</span>
                         <span className="booking-page__summary-value">{selectedSeats.length} / {MAX_SEATS}</span>
                     </div>
-                    <p className="booking-page__info-notice notice-free">Verify eligibility for a free ticket via special govt. announcement.</p>
+                    <p className="booking-page__info-notice notice-free">Verify eligibility for a free ticket via special govt. announcement. Only one seat can be booked.</p>
                     <Input id="registrationNumber" label="Registration Number" value={freeBookingDetails.registrationNumber} onChange={handleFreeBookingFormChange} required />
                     <Input id="phone" label="Registered Phone Number" type="tel" value={freeBookingDetails.phone} onChange={handleFreeBookingFormChange} required />
-                </div>
-            )}
-
-            {isDiscountBooking && (
-                <div className="booking-page__form-section">
-                     <p className={`booking-page__info-notice ${bookingType === 'child' ? 'notice-child' : 'notice-senior'}`}>
-                        <ShieldAlert size={18} />
-                        {bookingType === 'child' ? `${discounts.child}% discount applied for child ticket.` : `${discounts.senior}% discount applied for senior citizen.`}
-                        <br />
-                        Aadhaar verification is required.
-                    </p>
-                    <Input 
-                        id="aadhaarNumber" 
-                        label="Enter 12-Digit Aadhaar Number" 
-                        type="tel" 
-                        value={aadhaarNumber} 
-                        onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, '').slice(0,12))} 
-                        required 
-                        maxLength={12}
-                        pattern="\d{12}"
-                    />
-                     <div className="booking-page__summary-details" style={{marginTop: '1rem'}}>
-                         <div className="booking-page__summary-row">
-                            <span className="booking-page__summary-label">Selected Seats:</span>
-                            <span className="booking-page__summary-value">{selectedSeats.length} / {MAX_SEATS}</span>
-                        </div>
-                        <div className="booking-page__summary-row">
-                            <span className="booking-page__summary-label">Original Fare:</span>
-                            <span className="booking-page__summary-value" style={{textDecoration: 'line-through'}}>₹{(selectedSeats.length * pricePerSeat).toFixed(2)}</span>
-                        </div>
-                        <div className="booking-page__total-fare">
-                            <span className="booking-page__total-fare-label">Discounted Fare:</span>
-                            <span className="booking-page__total-fare-value">₹{totalFare.toFixed(2)}</span>
-                        </div>
-                    </div>
                 </div>
             )}
 
@@ -353,13 +426,9 @@ export const BookingPage: React.FC = () => {
               onClick={handleConfirmBooking} 
               disabled={isConfirmButtonDisabled}
               isLoading={isBooking}
-              className={`booking-page__confirm-btn 
-                ${bookingType === 'free' ? 'booking-page__confirm-btn--free' : ''}
-                ${bookingType === 'child' ? 'booking-page__confirm-btn--child' : ''}
-                ${bookingType === 'senior' ? 'booking-page__confirm-btn--senior' : ''}
-              `}
+              className="booking-page__confirm-btn"
             >
-              {isDiscountBooking ? <><ShieldAlert size={20} /> Verify & Book</> : (bookingType === 'free' ? <><Gift size={20} /> Verify & Book Free</> : <><Ticket size={20} /> Confirm Booking</>)}
+              {mode === 'free' ? <><Gift size={20} /> Verify & Book Free</> : <><Ticket size={20} /> Confirm Booking</>}
             </Button>
           </Card>
         </div>

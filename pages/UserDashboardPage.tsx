@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
@@ -7,7 +8,7 @@ import type { UserBooking, Schedule } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
-import { Download, QrCode, Calendar, IndianRupee, Star, Armchair, Baby, Accessibility } from 'lucide-react';
+import { Download, QrCode, Calendar, IndianRupee, Star, Armchair, Baby, Accessibility, Users } from 'lucide-react';
 
 const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
     const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -39,6 +40,8 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
                 return <span className="booking-detail-card__tag tag-child"><Baby size={12}/> CHILD DISCOUNT</span>;
             case 'SENIOR':
                 return <span className="booking-detail-card__tag tag-senior"><Accessibility size={12}/> SENIOR DISCOUNT</span>;
+            case 'MIXED':
+                return <span className="booking-detail-card__tag tag-mixed"><Users size={12}/> MIXED DISCOUNT</span>;
             default:
                 return null;
         }
@@ -105,12 +108,17 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
                 fareText += ` (Child Discount)`;
             } else if (booking.discountType === 'SENIOR') {
                 fareText += ` (Senior Discount)`;
+            } else if (booking.discountType === 'MIXED') {
+                 fareText += ` (Mixed Discount)`;
             }
             doc.text(fareText, 20, 85);
             
             if (booking.aadhaarNumber) {
                 doc.setFont("helvetica", "normal");
-                doc.text(`Aadhaar No: XXXX XXXX ${booking.aadhaarNumber.slice(-4)}`, 20, 95);
+                const aadhaarText = booking.aadhaarNumber.length > 4 
+                    ? `Aadhaar No(s): ...${booking.aadhaarNumber.slice(-4)}`
+                    : `Aadhaar No: ${booking.aadhaarNumber}`;
+                doc.text(aadhaarText, 20, 95);
             }
 
             doc.save(`GovernmentBus-Ticket-${booking.id}.pdf`);

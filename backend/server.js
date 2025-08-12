@@ -1,4 +1,6 @@
 
+
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -881,8 +883,11 @@ apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
 apiRouter.post('/bookings/free', async (req, res) => {
     const { userId, scheduleId, seatIds, origin, destination, registrationNumber, phone } = req.body;
 
-    if (!userId || !scheduleId || !Array.isArray(seatIds) || seatIds.length === 0 || !origin || !destination || !registrationNumber || !phone) {
+    if (!userId || !scheduleId || !Array.isArray(seatIds) || !origin || !destination || !registrationNumber || !phone) {
         return res.status(400).json({ message: 'All booking and verification fields are required.' });
+    }
+    if (seatIds.length !== 1) {
+        return res.status(400).json({ message: 'Free ticket bookings are limited to one seat per user per transaction.' });
     }
 
     const connection = await dbPool.getConnection();
@@ -957,21 +962,23 @@ apiRouter.post('/bookings/free', async (req, res) => {
 
 // [POST] /api/bookings
 apiRouter.post("/bookings", async (req, res) => {
-    const { userId, scheduleId, seatIds, origin, destination, discountType, aadhaarNumber } = req.body;
+    const { userId, scheduleId, seats, origin, destination } = req.body;
 
-    if (!userId || !scheduleId || !Array.isArray(seatIds) || seatIds.length === 0 || !origin || !destination) {
+    if (!userId || !scheduleId || !Array.isArray(seats) || seats.length === 0 || !origin || !destination) {
         return res.status(400).json({ message: 'Missing or invalid required booking information.' });
     }
     
-    if (discountType && discountType !== 'NONE' && (!aadhaarNumber || aadhaarNumber.length !== 12)) {
-        return res.status(400).json({ message: 'A valid 12-digit Aadhaar number is required for discounted tickets.' });
+    // Server-side validation for Aadhaar numbers
+    for (const seat of seats) {
+        if ((seat.type === 'CHILD' || seat.type === 'SENIOR') && (!seat.aadhaarNumber || seat.aadhaarNumber.length !== 12)) {
+             return res.status(400).json({ message: `A valid 12-digit Aadhaar number is required for seat ${seat.seatId}.` });
+        }
     }
 
     const connection = await dbPool.getConnection();
     try {
         await connection.beginTransaction();
 
-        // Step 1: Fetch schedule to get base fare and check validity
         const schedulesMap = await fetchAndAssembleSchedules(connection, scheduleId);
         const schedule = schedulesMap[scheduleId];
         if (!schedule) {
@@ -981,14 +988,12 @@ apiRouter.post("/bookings", async (req, res) => {
         
         const originStop = schedule.fullRouteStops.find(s => s.normalizedName === origin.trim().toLowerCase());
         const destStop = schedule.fullRouteStops.find(s => s.normalizedName === destination.trim().toLowerCase());
-
         if (!originStop || !destStop || originStop.order >= destStop.order) {
             await connection.rollback();
             return res.status(400).json({ message: 'Invalid origin or destination for this route.' });
         }
         const baseFarePerSeat = destStop.fare - originStop.fare;
 
-        // Step 2: Fetch discount settings
         const [[childDiscRow], [seniorDiscRow], [discountEnabledRow]] = await Promise.all([
              connection.query("SELECT value FROM settings WHERE `key` = 'childDiscountPercentage'"),
              connection.query("SELECT value FROM settings WHERE `key` = 'seniorDiscountPercentage'"),
@@ -997,29 +1002,48 @@ apiRouter.post("/bookings", async (req, res) => {
         
         const childDiscount = Number(childDiscRow[0]?.value || '40');
         const seniorDiscount = Number(seniorDiscRow[0]?.value || '50');
-        const isDiscountEnabled = discountEnabledRow[0]?.value === 'true';
+        const isDiscountEnabled = discountEnabledRow[0]?.value === 'true' && schedule.isDiscountEnabled;
 
-        // Step 3: Calculate final fare on the server
-        let finalFarePerSeat = baseFarePerSeat;
-        if (isDiscountEnabled && schedule.isDiscountEnabled && discountType !== 'NONE') {
-            const discountPercent = discountType === 'CHILD' ? childDiscount : seniorDiscount;
-            finalFarePerSeat = baseFarePerSeat * (1 - (discountPercent / 100));
+        let totalFare = 0;
+        const seatTypes = new Set();
+        const aadhaarNumbers = [];
+
+        for(const seat of seats) {
+            seatTypes.add(seat.type);
+            let finalFarePerSeat = baseFarePerSeat;
+            if (isDiscountEnabled) {
+                if(seat.type === 'CHILD') {
+                    finalFarePerSeat = baseFarePerSeat * (1 - (childDiscount / 100));
+                    aadhaarNumbers.push(seat.aadhaarNumber);
+                } else if (seat.type === 'SENIOR') {
+                    finalFarePerSeat = baseFarePerSeat * (1 - (seniorDiscount / 100));
+                    aadhaarNumbers.push(seat.aadhaarNumber);
+                }
+            }
+            totalFare += finalFarePerSeat;
         }
         
-        const totalFare = seatIds.length * finalFarePerSeat;
+        let discountTypeForDb = 'NONE';
+        if (seatTypes.size > 1) {
+            discountTypeForDb = 'MIXED';
+        } else if (seatTypes.has('CHILD')) {
+            discountTypeForDb = 'CHILD';
+        } else if (seatTypes.has('SENIOR')) {
+            discountTypeForDb = 'SENIOR';
+        }
+
         const bookingId = uuidv4();
         const bookingDate = new Date();
 
-        // Step 4: Insert booking with server-calculated fare
         await connection.execute(
             `INSERT INTO bookings (id, userId, scheduleId, fare, bookingDate, isFreeTicket, origin, destination, discountType, aadhaarNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [bookingId, userId, scheduleId, totalFare, bookingDate, false, origin, destination, discountType || 'NONE', aadhaarNumber || null]
+            [bookingId, userId, scheduleId, totalFare, bookingDate, false, origin, destination, discountTypeForDb, aadhaarNumbers.length > 0 ? aadhaarNumbers.join(',') : null]
         );
 
-        const seatInsertPromises = seatIds.map(seatId =>
+        const seatInsertPromises = seats.map(seat =>
             connection.execute(
                 `INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)`,
-                [bookingId, seatId, origin, destination]
+                [bookingId, seat.seatId, origin, destination]
             )
         );
         await Promise.all(seatInsertPromises);
@@ -1345,6 +1369,22 @@ apiRouter.post('/users/subadmin', async (req, res) => {
     try {
         await connection.beginTransaction();
         
+        // Check if any of the assigned districts are already taken
+        if (assignedDistricts.length > 0) {
+            const placeholders = assignedDistricts.map(() => '?').join(',');
+            const [existingAssignments] = await connection.query(
+                `SELECT district FROM subadmindistricts WHERE district IN (${placeholders})`,
+                assignedDistricts
+            );
+
+            if (existingAssignments.length > 0) {
+                const takenDistricts = existingAssignments.map(d => d.district).join(', ');
+                await connection.rollback();
+                connection.release();
+                return res.status(409).json({ message: `The following districts are already assigned to another sub-admin: ${takenDistricts}` });
+            }
+        }
+        
         const userId = uuidv4();
         const newUser = { id: userId, fullName, email, phone, password, role: 'SUB_ADMIN' };
 
@@ -1478,6 +1518,24 @@ apiRouter.put('/users/subadmin/:id', async (req, res) => {
     const connection = await dbPool.getConnection();
     try {
         await connection.beginTransaction();
+        
+        // Check if any of the assigned districts are already taken by another sub-admin
+        if (assignedDistricts.length > 0) {
+            const placeholders = assignedDistricts.map(() => '?').join(',');
+            const queryParams = [...assignedDistricts, id]; // Add user's own ID to exclude them from the check
+            const [existingAssignments] = await connection.query(
+                `SELECT district FROM subadmindistricts WHERE district IN (${placeholders}) AND userId != ?`,
+                queryParams
+            );
+
+            if (existingAssignments.length > 0) {
+                const takenDistricts = existingAssignments.map(d => d.district).join(', ');
+                await connection.rollback();
+                connection.release();
+                return res.status(409).json({ message: `The following districts are already assigned to another sub-admin: ${takenDistricts}` });
+            }
+        }
+
 
         // Build the user update query dynamically
         const userFields = { fullName, email, phone, gender, dob };
