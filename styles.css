@@ -94,6 +94,11 @@
     --z-index-header: 40;
 }
 
+html {
+    font-size: 16px;
+    scroll-behavior: smooth;
+}
+
 *,
 *::before,
 *::after {
@@ -108,6 +113,7 @@ body {
     color: var(--color-text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
 }
 
 a {
@@ -759,6 +765,7 @@ button {
     gap: 1.5rem;
     margin-top: 0.5rem;
     color: var(--color-text-secondary);
+    flex-wrap: wrap;
 }
 .schedule-card__meta-item {
     display: flex;
@@ -959,6 +966,15 @@ button {
     background-color: var(--color-bg-body);
     padding: 1rem;
 }
+
+@media (max-width: 640px) {
+    .auth-page {
+        align-items: flex-start;
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+}
+
 .auth-card {
     width: 100%;
     max-width: 28rem;
@@ -2186,4 +2202,10 @@ button {
 .pass-card__hologram:hover {
     animation: spin 4s linear infinite;
     opacity: 0.8;
+}
+
+@media (max-width: 768px) {
+    html {
+        font-size: 14px;
+    }
 }
