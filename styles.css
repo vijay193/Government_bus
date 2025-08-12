@@ -887,9 +887,15 @@ button {
     gap: 1.5rem;
 }
 .home-page__route-inputs {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr;
     gap: 1rem;
+}
+@media (min-width: 640px) {
+    .home-page__route-inputs {
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+    }
 }
 .home-page__district-select {
     width: 100%;
