@@ -1,6 +1,4 @@
 
-
-
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -354,6 +352,11 @@ apiRouter.post('/auth/verify-otp', async (req, res) => {
 
         if (!user) {
             return res.status(404).json({ message: 'User not found after OTP verification.' });
+        }
+
+        if (user.role === 'SUB_ADMIN') {
+            const [districtRows] = await dbPool.query('SELECT district FROM subadmindistricts WHERE userId = ?', [user.id]);
+            user.assignedDistricts = districtRows.map(r => r.district);
         }
 
         delete otpStore[phone];
