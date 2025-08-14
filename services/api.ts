@@ -7,7 +7,8 @@ import type { Schedule, User, BusLocation, UserBooking, RevenueAnalyticsData, Pa
 // The backend is not part of this project, but these functions are wired
 // to make calls to endpoints that a real backend would expose based on the provided schema.
 
-const API_BASE_URL = 'https://81c75d04c091.ngrok-free.app/api'; 
+const API_BASE_URL = 'https://government-bus.onrender.com/api';
+
 
 const NGROK_HEADERS = {
   'ngrok-skip-browser-warning': 'true',
