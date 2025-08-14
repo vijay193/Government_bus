@@ -1,3 +1,4 @@
+
 import type {
     Schedule,
     User,
@@ -13,11 +14,6 @@ import type {
 } from '../types';
 
 const API_BASE_URL = 'https://government-bus.onrender.com/api';
-
-// Add default headers for ngrok or other proxies if required
-const NGROK_HEADERS: Record<string, string> = {
-    'ngrok-skip-browser-warning': '1',
-};
 
 /**
  * Get the auth token from localStorage, if it exists and is not expired.
@@ -69,7 +65,6 @@ async function apiFetch<T>(input: RequestInfo, init: RequestInit = {}): Promise<
     const token = getAuthToken();
     const headers: Record<string, string> = {
         ...(init.headers as Record<string, string> || {}),
-        ...NGROK_HEADERS,
         ...(token ? { 'X-Auth-Token': token } : {}),
     };
 

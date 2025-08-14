@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { api } from '../../services/api';
+import { api } from '@/services/API_BASE_URL';
 import type { Schedule } from '../../types';
 import { UserRole } from '../../types';
 import { Card } from '../../components/common/Card';
