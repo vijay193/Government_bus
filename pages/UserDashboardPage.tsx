@@ -146,7 +146,7 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
             doc.text(`Passenger: ${user.fullName}`, 20, 35);
             doc.text(`Route: ${booking.origin} to ${booking.destination}`, 20, 45);
             doc.text(`Bus: ${schedule.busName} (${schedule.id})`, 20, 55);
-            doc.text(`Booking Date: ${booking.bookingDate ? new Date(booking.bookingDate).toLocaleString() : 'N/A'}`, 20, 65);
+            doc.text(`Booking Date: ${new Date(booking.bookingDate).toLocaleString()}`, 20, 65);
             doc.text(`Departure from ${booking.origin}: ${departureTime}`, 20, 75);
             doc.text(`Arrival at ${booking.destination}: ${arrivalTime}`, 20, 82);
             doc.text(`Seats: ${(booking.seatIds || []).join(', ')}`, 20, 92);
@@ -238,7 +238,7 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
                     <p className="booking-detail-card__bus-name">{schedule ? schedule.busName : 'Loading bus details...'}</p>
                     
                     <div className="booking-detail-card__meta">
-                        <div className="booking-detail-card__meta-item" title="Booking Date"><Calendar size={16} /><span>{booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString() : 'N/A'}</span></div>
+                        <div className="booking-detail-card__meta-item" title="Booking Date"><Calendar size={16} /><span>{new Date(booking.bookingDate).toLocaleDateString()}</span></div>
                         <div className="booking-detail-card__meta-item" title="Total Fare"><IndianRupee size={16} /><span>{Number(booking.fare || 0).toFixed(2)}</span></div>
                         <div className="booking-detail-card__meta-item booking-detail-card__meta-item--full" title="Booked Seats"><Armchair size={16} /><span>{(booking.seatIds || []).join(', ')}</span></div>
                     </div>

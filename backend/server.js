@@ -226,6 +226,10 @@ const requireSubAdminOrAdmin = (req, res, next) => {
   next();
 };
 
+// --- Validation Constants ---
+const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+const passwordHint = "Password must be at least 8 characters long and include one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&).";
+
 
 // --- API Routes ---
 const apiRouter = express.Router();
@@ -1124,7 +1128,7 @@ apiRouter.post('/users/bulk-beneficiaries', requireAdmin, async (req, res) => {
 
 apiRouter.get('/users', requireSubAdminOrAdmin, async (req, res) => {
     try {
-        const [users] = await dbPool.query("SELECT id, fullName, email, phone, role FROM users ORDER BY role, fullName");
+        const [users] = await dbPool.query("SELECT id, fullName, email, phone, role, dob, gender FROM users ORDER BY role, fullName");
         const [subAdminDistricts] = await dbPool.query("SELECT userId, district FROM subadmindistricts");
 
         const districtsMap = subAdminDistricts.reduce((acc, row) => {
@@ -1145,9 +1149,17 @@ apiRouter.get('/users', requireSubAdminOrAdmin, async (req, res) => {
 });
 
 apiRouter.post('/users/subadmin', requireAdmin, async (req, res) => {
-    const { fullName, email, phone, password, assignedDistricts } = req.body;
+    const { fullName, email, phone, password, assignedDistricts, gender, dob } = req.body;
     if (!fullName || !phone || !password || !Array.isArray(assignedDistricts)) {
         return res.status(400).json({ message: 'Full name, phone, password, and assigned districts are required.' });
+    }
+
+    // --- Backend Validation ---
+    if (phone.length !== 10 || !/^\d{10}$/.test(phone)) {
+        return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
+    }
+    if (!passwordRegex.test(password)) {
+        return res.status(400).json({ message: passwordHint });
     }
 
     const connection = await dbPool.getConnection();
@@ -1165,9 +1177,9 @@ apiRouter.post('/users/subadmin', requireAdmin, async (req, res) => {
         }
         
         const userId = uuidv4();
-        const newUser = { id: userId, fullName, email, phone, password, role: 'SUB_ADMIN' };
+        const newUser = { id: userId, fullName, email, phone, password, role: 'SUB_ADMIN', gender, dob };
 
-        await connection.query('INSERT INTO users (id, fullName, email, phone, password, role) VALUES (?, ?, ?, ?, ?, ?)', [newUser.id, newUser.fullName, newUser.email, newUser.phone, newUser.password, newUser.role]);
+        await connection.query('INSERT INTO users (id, fullName, email, phone, password, role, gender, dob) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [newUser.id, newUser.fullName, newUser.email, newUser.phone, newUser.password, newUser.role, newUser.gender, newUser.dob || null]);
 
         if (assignedDistricts.length > 0) {
             const districtInsertPromises = assignedDistricts.map(district => connection.query('INSERT INTO subadmindistricts (userId, district) VALUES (?, ?)', [userId, district]));
@@ -1249,6 +1261,14 @@ apiRouter.put('/users/subadmin/:id', requireAdmin, async (req, res) => {
 
     if (!fullName || !phone || !Array.isArray(assignedDistricts)) {
         return res.status(400).json({ message: 'Full name, phone, and assigned districts are required.' });
+    }
+    
+    // --- Backend Validation ---
+    if (phone.length !== 10 || !/^\d{10}$/.test(phone)) {
+        return res.status(400).json({ message: 'Phone number must be exactly 10 digits.' });
+    }
+    if (password && !passwordRegex.test(password)) {
+        return res.status(400).json({ message: passwordHint });
     }
 
     const connection = await dbPool.getConnection();
@@ -1360,7 +1380,7 @@ apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => 
 
         const summary = byDistrict.reduce((acc, item) => {
             acc.totalRevenue += item.revenue; acc.totalPaidBookings += item.paidBookings;
-            acc.totalFreeTickets += item.freeTickets; acc.totalBookings += item.totalBookings;
+            acc.totalFreeTickets += item.totalFreeTickets; acc.totalBookings += item.totalBookings;
             return acc;
         }, { totalRevenue: 0, totalPaidBookings: 0, totalFreeTickets: 0, totalBookings: 0 });
 

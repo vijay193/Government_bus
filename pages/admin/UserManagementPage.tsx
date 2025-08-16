@@ -175,7 +175,7 @@ export const AdminUserManagementPage: React.FC = () => {
                 )}
             </Card>
 
-            {isSubAdminModalOpen && editingUser?.role === UserRole.SUB_ADMIN && (
+            {isSubAdminModalOpen && (editingUser === null || editingUser.role === UserRole.SUB_ADMIN) && (
                 <SubAdminFormModal
                     isOpen={isSubAdminModalOpen}
                     onClose={handleCloseModals}
