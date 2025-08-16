@@ -8,7 +8,7 @@ import { Card } from '../../components/common/Card';
 import { UserRole } from '../../types';
 import { DollarSign, Ticket, Gift, TrendingUp, AlertCircle } from 'lucide-react';
 
-const formatCurrency = (value: number) => `₹${value.toLocaleString('en-IN')}`;
+const formatCurrency = (value: number | null | undefined) => `₹${(value || 0).toLocaleString('en-IN')}`;
 
 const AnalyticsSummaryCard: React.FC<{ title: string; value: string; icon: React.ReactNode }> = ({ title, value, icon }) => (
     <Card className="analytics-summary-card">
@@ -82,7 +82,7 @@ export const RevenueAnalyticsPage: React.FC = () => {
         );
     }
 
-    if (!data) {
+    if (!data || !data.summary) {
         return <Card><p className="text-center">No analytics data available.</p></Card>;
     }
 
@@ -99,8 +99,8 @@ export const RevenueAnalyticsPage: React.FC = () => {
             
             <div className="analytics-summary-grid">
                 <AnalyticsSummaryCard title="Total Revenue" value={formatCurrency(summary.totalRevenue)} icon={<DollarSign className="analytics-summary-card__icon" />} />
-                <AnalyticsSummaryCard title="Paid Bookings" value={summary.totalPaidBookings.toLocaleString('en-IN')} icon={<Ticket className="analytics-summary-card__icon" />} />
-                <AnalyticsSummaryCard title="Free Tickets" value={summary.totalFreeTickets.toLocaleString('en-IN')} icon={<Gift className="analytics-summary-card__icon" />} />
+                <AnalyticsSummaryCard title="Paid Bookings" value={(summary.totalPaidBookings || 0).toLocaleString('en-IN')} icon={<Ticket className="analytics-summary-card__icon" />} />
+                <AnalyticsSummaryCard title="Free Tickets" value={(summary.totalFreeTickets || 0).toLocaleString('en-IN')} icon={<Gift className="analytics-summary-card__icon" />} />
             </div>
 
             <Card>
@@ -126,7 +126,7 @@ export const RevenueAnalyticsPage: React.FC = () => {
                             <Tooltip
                                 cursor={{ fill: 'rgba(239, 246, 255, 0.7)' }}
                                 contentStyle={{ backgroundColor: 'white', border: '1px solid #ddd', borderRadius: '8px' }}
-                                formatter={(value: number) => chartDataKey === 'revenue' ? formatCurrency(value) : value.toLocaleString()}
+                                formatter={(value: number) => chartDataKey === 'revenue' ? formatCurrency(value) : (value || 0).toLocaleString()}
                             />
                             <Legend wrapperStyle={{ fontSize: '14px' }} />
                             <Bar dataKey={chartDataKey} name={chartDataKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} fill="#4f46e5" radius={[4, 4, 0, 0]} />

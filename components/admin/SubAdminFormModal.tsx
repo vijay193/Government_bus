@@ -14,10 +14,6 @@ interface SubAdminFormModalProps {
   userToEdit: User | null;
 }
 
-const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-const passwordHint = "Password must be at least 8 characters long and include one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&).";
-
-
 export const SubAdminFormModal: React.FC<SubAdminFormModalProps> = ({ isOpen, onClose, onSave, userToEdit }) => {
   const [formData, setFormData] = useState({
     fullName: '',
@@ -73,26 +69,8 @@ export const SubAdminFormModal: React.FC<SubAdminFormModalProps> = ({ isOpen, on
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-
-    // --- Frontend Validation ---
-    if (formData.phone.length !== 10 || !/^\d{10}$/.test(formData.phone)) {
-        setError("Phone number must be exactly 10 digits.");
-        return;
-    }
-    // Password is required for new users, optional for edits.
-    if (!isEditMode && !passwordRegex.test(formData.password)) {
-        setError(passwordHint);
-        return;
-    }
-    // If a new password is being entered in edit mode, it must be valid.
-    if (isEditMode && formData.password && !passwordRegex.test(formData.password)) {
-        setError(passwordHint);
-        return;
-    }
-    // --- End Validation ---
-    
     setIsLoading(true);
+    setError(null);
     
     const userData: Partial<User> = {
         ...formData,
@@ -127,7 +105,7 @@ export const SubAdminFormModal: React.FC<SubAdminFormModalProps> = ({ isOpen, on
         
         <Input id="fullName" name="fullName" label="Full Name" value={formData.fullName} onChange={handleChange} required />
         <Input id="email" name="email" label="Email Address" type="email" value={formData.email} onChange={handleChange} required />
-        <Input id="phone" name="phone" label="Phone Number" type="tel" value={formData.phone} onChange={handleChange} required maxLength={10} pattern="\d{10}" />
+        <Input id="phone" name="phone" label="Phone Number" type="tel" value={formData.phone} onChange={handleChange} required />
         <Input id="dob" name="dob" label="Date of Birth" type="date" value={formData.dob} onChange={handleChange} />
         
         <div className="input-wrapper">
@@ -140,7 +118,6 @@ export const SubAdminFormModal: React.FC<SubAdminFormModalProps> = ({ isOpen, on
         </div>
 
         <Input id="password" name="password" label="Password" type="password" placeholder={isEditMode ? "Leave blank to keep unchanged" : ""} onChange={handleChange} required={!isEditMode} />
-        {(!isEditMode || formData.password) && <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '-1rem', textAlign: 'center' }}>{passwordHint}</p>}
         
         <div className="input-wrapper">
             <label className="input-label">Assign Districts</label>
