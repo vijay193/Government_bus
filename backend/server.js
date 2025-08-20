@@ -1393,14 +1393,19 @@ apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => 
     if (user.role === 'SUB_ADMIN') {
       assignedDistricts = user.assignedDistricts || [];
       if (assignedDistricts.length === 0) {
-        return res.json({ summary: { totalRevenue: 0, totalTickets: 0 }, byDistrict: [], byRoute: [], byCategory: [] });
+        return res.json({ 
+          summary: { totalRevenue: 0, totalTickets: 0 }, 
+          byDistrict: [], 
+          byRoute: [], 
+          byCategory: [] 
+        });
       }
     }
 
     const subAdminFilter = assignedDistricts.length ? 'AND b.origin IN (?)' : '';
     const queryParams = assignedDistricts.length ? [assignedDistricts] : [];
 
-    // --- Category-wise revenue/tickets (overall) ---
+    // --- Category-wise ---
     const [categoryRows] = await dbPool.query(`
       SELECT 
         p.type,
@@ -1413,7 +1418,9 @@ apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => 
           fare DECIMAL(10,2) PATH '$.fare'
         )
       ) AS p
-      WHERE b.isFreeTicket = 0 AND b.passengerDetails IS NOT NULL AND JSON_VALID(b.passengerDetails)
+      WHERE b.isFreeTicket = 0 
+        AND b.passengerDetails IS NOT NULL 
+        AND JSON_VALID(b.passengerDetails)
       ${subAdminFilter}
       GROUP BY p.type
     `, queryParams);
@@ -1432,7 +1439,9 @@ apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => 
           fare DECIMAL(10,2) PATH '$.fare'
         )
       ) AS p
-      WHERE b.isFreeTicket = 0 AND b.passengerDetails IS NOT NULL AND JSON_VALID(b.passengerDetails)
+      WHERE b.isFreeTicket = 0 
+        AND b.passengerDetails IS NOT NULL 
+        AND JSON_VALID(b.passengerDetails)
       ${subAdminFilter}
       GROUP BY b.origin, p.type
       ORDER BY revenue DESC
@@ -1452,20 +1461,43 @@ apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => 
           fare DECIMAL(10,2) PATH '$.fare'
         )
       ) AS p
-      WHERE b.isFreeTicket = 0 AND b.passengerDetails IS NOT NULL AND JSON_VALID(b.passengerDetails)
+      WHERE b.isFreeTicket = 0 
+        AND b.passengerDetails IS NOT NULL 
+        AND JSON_VALID(b.passengerDetails)
       ${subAdminFilter}
       GROUP BY route, p.type
       ORDER BY revenue DESC
     `, queryParams);
 
+    // --- Normalize numbers ---
+    const cleanCategory = categoryRows.map(r => ({
+      type: r.type,
+      tickets: Number(r.tickets) || 0,
+      revenue: Number(r.revenue) || 0,
+    }));
+
+    const cleanDistrict = districtRows.map(r => ({
+      district: r.district,
+      type: r.type,
+      tickets: Number(r.tickets) || 0,
+      revenue: Number(r.revenue) || 0,
+    }));
+
+    const cleanRoute = routeRows.map(r => ({
+      route: r.route,
+      type: r.type,
+      tickets: Number(r.tickets) || 0,
+      revenue: Number(r.revenue) || 0,
+    }));
+
     res.json({
       summary: {
-        totalRevenue: categoryRows.reduce((a, r) => a + (r.revenue || 0), 0),
-        totalTickets: categoryRows.reduce((a, r) => a + (r.tickets || 0), 0)
+        totalRevenue: cleanCategory.reduce((a, r) => a + r.revenue, 0),
+        totalTickets: cleanCategory.reduce((a, r) => a + r.tickets, 0),
       },
-      byCategory: categoryRows,
-      byDistrict: districtRows,
-      byRoute: routeRows
+      byCategory: cleanCategory,
+      byDistrict: cleanDistrict,
+      byRoute: cleanRoute,
     });
 
   } catch (err) {

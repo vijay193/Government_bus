@@ -171,8 +171,12 @@ export const RevenueAnalyticsPage: React.FC = () => {
                         <BarChart data={districtChartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} />
                             <XAxis dataKey="district" tick={{ fontSize: 12 }} />
-                            <YAxis tickFormatter={(value) => `₹${(value/1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
-                            <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                            <YAxis 
+  tickFormatter={(value) => `₹${(Number(value)/1000).toFixed(1)}k`} 
+  tick={{ fontSize: 12 }} 
+/>
+<Tooltip formatter={(value: number) => formatCurrency(Number(value))} />
+
                             <Legend />
                             <Bar dataKey="normal" stackId="a" fill={COLORS[0]} name="Normal" />
                             <Bar dataKey="child" stackId="a" fill={COLORS[1]} name="Child" />
