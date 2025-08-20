@@ -1393,15 +1393,19 @@ apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => 
     if (user.role === 'SUB_ADMIN') {
       assignedDistricts = user.assignedDistricts || [];
       if (assignedDistricts.length === 0) {
-        return res.json({ summary: {}, byDistrict: [], byRoute: [], byCategory: [] });
+        return res.json({ summary: { totalRevenue: 0, totalTickets: 0 }, byDistrict: [], byRoute: [], byCategory: [] });
       }
     }
 
+    const subAdminFilter = assignedDistricts.length ? 'AND b.origin IN (?)' : '';
+    const queryParams = assignedDistricts.length ? [assignedDistricts] : [];
+
     // --- Category-wise revenue/tickets (overall) ---
     const [categoryRows] = await dbPool.query(`
-      SELECT type,
-             COUNT(*) AS tickets,
-             SUM(fare) AS revenue
+      SELECT 
+        p.type,
+        COUNT(*) AS tickets,
+        SUM(p.fare) AS revenue
       FROM bookings b
       JOIN JSON_TABLE(b.passengerDetails, '$[*]' 
         COLUMNS (
@@ -1409,17 +1413,18 @@ apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => 
           fare DECIMAL(10,2) PATH '$.fare'
         )
       ) AS p
-      WHERE b.isFreeTicket = 0
-      ${assignedDistricts.length ? 'AND b.origin IN (?)' : ''}
-      GROUP BY type
-    `, assignedDistricts.length ? [assignedDistricts] : []);
+      WHERE b.isFreeTicket = 0 AND b.passengerDetails IS NOT NULL AND JSON_VALID(b.passengerDetails)
+      ${subAdminFilter}
+      GROUP BY p.type
+    `, queryParams);
 
     // --- District-wise ---
     const [districtRows] = await dbPool.query(`
-      SELECT b.origin AS district,
-             p.type,
-             COUNT(*) AS tickets,
-             SUM(p.fare) AS revenue
+      SELECT 
+        b.origin AS district,
+        p.type,
+        COUNT(*) AS tickets,
+        SUM(p.fare) AS revenue
       FROM bookings b
       JOIN JSON_TABLE(b.passengerDetails, '$[*]' 
         COLUMNS (
@@ -1427,18 +1432,19 @@ apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => 
           fare DECIMAL(10,2) PATH '$.fare'
         )
       ) AS p
-      WHERE b.isFreeTicket = 0
-      ${assignedDistricts.length ? 'AND b.origin IN (?)' : ''}
+      WHERE b.isFreeTicket = 0 AND b.passengerDetails IS NOT NULL AND JSON_VALID(b.passengerDetails)
+      ${subAdminFilter}
       GROUP BY b.origin, p.type
       ORDER BY revenue DESC
-    `, assignedDistricts.length ? [assignedDistricts] : []);
+    `, queryParams);
 
     // --- Route-wise ---
     const [routeRows] = await dbPool.query(`
-      SELECT CONCAT(b.origin, ' -> ', b.destination) AS route,
-             p.type,
-             COUNT(*) AS tickets,
-             SUM(p.fare) AS revenue
+      SELECT 
+        CONCAT(b.origin, ' -> ', b.destination) AS route,
+        p.type,
+        COUNT(*) AS tickets,
+        SUM(p.fare) AS revenue
       FROM bookings b
       JOIN JSON_TABLE(b.passengerDetails, '$[*]' 
         COLUMNS (
@@ -1446,11 +1452,11 @@ apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => 
           fare DECIMAL(10,2) PATH '$.fare'
         )
       ) AS p
-      WHERE b.isFreeTicket = 0
-      ${assignedDistricts.length ? 'AND b.origin IN (?)' : ''}
+      WHERE b.isFreeTicket = 0 AND b.passengerDetails IS NOT NULL AND JSON_VALID(b.passengerDetails)
+      ${subAdminFilter}
       GROUP BY route, p.type
       ORDER BY revenue DESC
-    `, assignedDistricts.length ? [assignedDistricts] : []);
+    `, queryParams);
 
     res.json({
       summary: {
