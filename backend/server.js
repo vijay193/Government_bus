@@ -854,8 +854,11 @@ apiRouter.post("/bookings", requireAuth, async (req, res) => {
     }
     
     for (const seat of seats) {
-        if ((seat.type === 'CHILD' || seat.type === 'SENIOR') && (!seat.aadhaarNumber || seat.aadhaarNumber.length !== 12 || !seat.fullName || seat.fullName.trim() === '')) {
-             return res.status(400).json({ message: `Full name and a valid 12-digit Aadhaar number are required for seat ${seat.seatId}.` });
+        if (!seat.fullName || seat.fullName.trim() === '') {
+            return res.status(400).json({ message: `Full name is required for seat ${seat.seatId}.` });
+        }
+        if ((seat.type === 'CHILD' || seat.type === 'SENIOR') && (!seat.aadhaarNumber || seat.aadhaarNumber.length !== 12)) {
+             return res.status(400).json({ message: `A valid 12-digit Aadhaar number is required for seat ${seat.seatId}.` });
         }
     }
 
@@ -876,6 +879,7 @@ apiRouter.post("/bookings", requireAuth, async (req, res) => {
             await connection.rollback();
             return res.status(400).json({ message: 'Invalid origin or destination for this route.' });
         }
+
         const baseFarePerSeat = destStop.fare - originStop.fare;
 
         const [[childDiscRow], [seniorDiscRow], [discountEnabledRow]] = await Promise.all([
@@ -888,37 +892,75 @@ apiRouter.post("/bookings", requireAuth, async (req, res) => {
         const seniorDiscount = Number(seniorDiscRow[0]?.value || '50');
         const isDiscountEnabled = discountEnabledRow[0]?.value === 'true' && schedule.isDiscountEnabled;
 
-        let totalFare = 0;
+                let totalFare = 0;
         const seatTypes = new Set();
         const passengerDetails = [];
 
-        for(const seat of seats) {
+        for (const seat of seats) {
             seatTypes.add(seat.type);
             let finalFarePerSeat = baseFarePerSeat;
+
+            const passengerDetail = {
+                seatId: seat.seatId,
+                fullName: seat.fullName,
+                type: seat.type,
+            };
+
             if (isDiscountEnabled) {
-                if(seat.type === 'CHILD') {
+                if (seat.type === 'CHILD') {
                     finalFarePerSeat = baseFarePerSeat * (1 - (childDiscount / 100));
-                    passengerDetails.push({ seatId: seat.seatId, fullName: seat.fullName, aadhaarNumber: seat.aadhaarNumber, type: 'CHILD' });
+                    passengerDetail.aadhaarNumber = seat.aadhaarNumber;
                 } else if (seat.type === 'SENIOR') {
                     finalFarePerSeat = baseFarePerSeat * (1 - (seniorDiscount / 100));
-                    passengerDetails.push({ seatId: seat.seatId, fullName: seat.fullName, aadhaarNumber: seat.aadhaarNumber, type: 'SENIOR' });
+                    passengerDetail.aadhaarNumber = seat.aadhaarNumber;
                 }
             }
+
+            // Ensure fare is present for EVERY passenger, including NORMAL
+            passengerDetail.fare = finalFarePerSeat;
+
             totalFare += finalFarePerSeat;
+            passengerDetails.push(passengerDetail);
         }
         
         let discountTypeForDb = 'NONE';
-        if (seatTypes.size > 1) discountTypeForDb = 'MIXED';
-        else if (seatTypes.has('CHILD')) discountTypeForDb = 'CHILD';
-        else if (seatTypes.has('SENIOR')) discountTypeForDb = 'SENIOR';
+        const hasDiscountPassenger = Array.from(seatTypes).some(type => type === 'CHILD' || type === 'SENIOR');
+        if (hasDiscountPassenger) {
+            const discountTypes = new Set(Array.from(seatTypes).filter(type => type !== 'NORMAL'));
+            if (discountTypes.size > 1) {
+                discountTypeForDb = 'MIXED';
+            } else if (discountTypes.has('CHILD')) {
+                discountTypeForDb = 'CHILD';
+            } else if (discountTypes.has('SENIOR')) {
+                discountTypeForDb = 'SENIOR';
+            }
+        }
 
         const bookingId = uuidv4();
         await connection.execute(
-            `INSERT INTO bookings (id, userId, scheduleId, fare, bookingDate, isFreeTicket, origin, destination, discountType, passengerDetails) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [bookingId, userId, scheduleId, totalFare, new Date(), false, origin, destination, discountTypeForDb, passengerDetails.length > 0 ? JSON.stringify(passengerDetails) : null]
+            `INSERT INTO bookings 
+                (id, userId, scheduleId, fare, bookingDate, isFreeTicket, origin, destination, discountType, passengerDetails) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                bookingId,
+                userId,
+                scheduleId,
+                totalFare,
+                new Date(),
+                false,
+                origin,
+                destination,
+                discountTypeForDb,
+                passengerDetails.length > 0 ? JSON.stringify(passengerDetails) : null
+            ]
         );
 
-        const seatInsertPromises = seats.map(seat => connection.execute(`INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)`, [bookingId, seat.seatId, origin, destination]));
+        const seatInsertPromises = seats.map(seat =>
+            connection.execute(
+                `INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)`,
+                [bookingId, seat.seatId, origin, destination]
+            )
+        );
         await Promise.all(seatInsertPromises);
 
         await connection.commit();
@@ -933,6 +975,7 @@ apiRouter.post("/bookings", requireAuth, async (req, res) => {
         connection.release();
     }
 });
+
 
 apiRouter.get('/tracking/:busId', async (req, res) => {
   const schedulesMap = await fetchAndAssembleSchedules(dbPool, req.params.busId);
