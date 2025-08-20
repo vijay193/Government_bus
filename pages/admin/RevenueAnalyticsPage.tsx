@@ -6,7 +6,7 @@ import { api } from '../../services/api';
 import type { RevenueAnalyticsData, AnalyticsDataPoint } from '../../types';
 import { Card } from '../../components/common/Card';
 import { UserRole } from '../../types';
-import { DollarSign, Ticket, TrendingUp, AlertCircle, Users } from 'lucide-react';
+import { DollarSign, Ticket, TrendingUp, AlertCircle, Users, Route, MapPin } from 'lucide-react';
 
 const COLORS = ['#4f46e5', '#16a34a', '#f59e0b']; // NORMAL, CHILD, SENIOR
 const CATEGORY_ORDER: { [key: string]: number } = { 'NORMAL': 0, 'CHILD': 1, 'SENIOR': 2 };
@@ -15,7 +15,7 @@ const formatCurrency = (value: number | null | undefined) => {
     if (value === null || typeof value === 'undefined' || isNaN(value)) {
         return '₹0';
     }
-    return `₹${value.toLocaleString('en-IN')}`;
+    return `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
 const AnalyticsSummaryCard: React.FC<{ title: string; value: string; icon: React.ReactNode }> = ({ title, value, icon }) => (
@@ -75,17 +75,83 @@ export const RevenueAnalyticsPage: React.FC = () => {
 
     const routeDataAggregated = useMemo(() => {
         if (!data?.byRoute) return [];
-        const routeMap = new Map<string, { route: string; revenue: number; tickets: number }>();
+        const routeMap = new Map<string, {
+            route: string;
+            normalTickets: number; childTickets: number; seniorTickets: number; totalTickets: number;
+            normalRevenue: number; childRevenue: number; seniorRevenue: number; totalRevenue: number;
+        }>();
+
         data.byRoute.forEach((item) => {
             if (!routeMap.has(item.route)) {
-                routeMap.set(item.route, { route: item.route, revenue: 0, tickets: 0 });
+                routeMap.set(item.route, {
+                    route: item.route,
+                    normalTickets: 0, childTickets: 0, seniorTickets: 0, totalTickets: 0,
+                    normalRevenue: 0, childRevenue: 0, seniorRevenue: 0, totalRevenue: 0,
+                });
             }
             const routeData = routeMap.get(item.route)!;
-            routeData.revenue += item.revenue;
-            routeData.tickets += item.tickets;
+            
+            routeData.totalTickets += item.tickets;
+            routeData.totalRevenue += item.revenue;
+
+            switch (item.type) {
+                case 'NORMAL':
+                    routeData.normalTickets += item.tickets;
+                    routeData.normalRevenue += item.revenue;
+                    break;
+                case 'CHILD':
+                    routeData.childTickets += item.tickets;
+                    routeData.childRevenue += item.revenue;
+                    break;
+                case 'SENIOR':
+                    routeData.seniorTickets += item.tickets;
+                    routeData.seniorRevenue += item.revenue;
+                    break;
+            }
         });
-        return Array.from(routeMap.values()).sort((a,b) => b.revenue - a.revenue);
+
+        return Array.from(routeMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
     }, [data?.byRoute]);
+
+    const districtDataAggregated = useMemo(() => {
+        if (!data?.byDistrict) return [];
+        const districtMap = new Map<string, {
+            district: string;
+            normalTickets: number; childTickets: number; seniorTickets: number; totalTickets: number;
+            normalRevenue: number; childRevenue: number; seniorRevenue: number; totalRevenue: number;
+        }>();
+    
+        data.byDistrict.forEach((item) => {
+            if (!districtMap.has(item.district)) {
+                districtMap.set(item.district, {
+                    district: item.district,
+                    normalTickets: 0, childTickets: 0, seniorTickets: 0, totalTickets: 0,
+                    normalRevenue: 0, childRevenue: 0, seniorRevenue: 0, totalRevenue: 0,
+                });
+            }
+            const districtData = districtMap.get(item.district)!;
+            
+            districtData.totalTickets += item.tickets;
+            districtData.totalRevenue += item.revenue;
+    
+            switch (item.type) {
+                case 'NORMAL':
+                    districtData.normalTickets += item.tickets;
+                    districtData.normalRevenue += item.revenue;
+                    break;
+                case 'CHILD':
+                    districtData.childTickets += item.tickets;
+                    districtData.childRevenue += item.revenue;
+                    break;
+                case 'SENIOR':
+                    districtData.seniorTickets += item.tickets;
+                    districtData.seniorRevenue += item.revenue;
+                    break;
+            }
+        });
+    
+        return Array.from(districtMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
+    }, [data?.byDistrict]);
 
 
     if (isLoading) {
@@ -137,81 +203,143 @@ export const RevenueAnalyticsPage: React.FC = () => {
                 ))}
             </div>
 
-            {/* Category-wise Pie Chart */}
-            <Card>
-                <h2 className="admin-dashboard__grid-title">Category-wise Revenue Share</h2>
-                <div style={{ width: '100%', height: 300 }}>
-                    <ResponsiveContainer>
-                        <PieChart>
-                            <Pie
-                                data={categoryChartData}
-                                cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                outerRadius={120}
-                                dataKey="value"
-                            >
-                                {categoryChartData.map((entry) => (
-                                    <Cell key={`cell-${entry.name}`} fill={COLORS[CATEGORY_ORDER[entry.name as keyof typeof CATEGORY_ORDER] % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                            <Legend />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-            </Card>
-
-            {/* District-wise Stacked Bar */}
-            <Card>
-                <h2 className="admin-dashboard__grid-title">District Performance (by Category)</h2>
-                <div style={{ width: '100%', height: 350 }}>
-                    <ResponsiveContainer>
-                        <BarChart data={districtChartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                            <XAxis dataKey="district" tick={{ fontSize: 12 }} />
-                            <YAxis 
-  tickFormatter={(value) => `₹${(Number(value)/1000).toFixed(1)}k`} 
-  tick={{ fontSize: 12 }} 
-/>
-<Tooltip formatter={(value: number) => formatCurrency(Number(value))} />
-
-                            <Legend />
-                            <Bar dataKey="normal" stackId="a" fill={COLORS[0]} name="Normal" />
-                            <Bar dataKey="child" stackId="a" fill={COLORS[1]} name="Child" />
-                            <Bar dataKey="senior" stackId="a" fill={COLORS[2]} name="Senior" />
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-            </Card>
-
-            {/* Route breakdown table */}
-            {(user?.role === UserRole.ADMIN || user?.role === UserRole.SUB_ADMIN) && routeDataAggregated.length > 0 && (
+            <div className="analytics-grid-layout">
+                {/* Column 1: Category & Route Performance */}
                 <Card>
-                    <h2 className="admin-dashboard__grid-title">Route Breakdown</h2>
-                    <div className="analytics-table-wrapper">
-                        <table className="user-management__table">
-                            <thead>
-                                <tr>
-                                    <th>Route</th>
-                                    <th style={{textAlign: 'right'}}>Revenue</th>
-                                    <th style={{textAlign: 'right'}}>Bookings</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {routeDataAggregated.map((r) => (
-                                    <tr key={r.route}>
-                                        <td>{r.route}</td>
-                                        <td style={{textAlign: 'right'}}>{formatCurrency(r.revenue)}</td>
-                                        <td style={{textAlign: 'right'}}>{r.tickets}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                    <h2 className="admin-dashboard__grid-title">Category & Route Performance</h2>
+                    {categoryChartData.length > 0 && (
+                        <div style={{ width: '100%', height: 300 }}>
+                            <ResponsiveContainer>
+                                <PieChart>
+                                    <Pie
+                                        data={categoryChartData}
+                                        cx="50%"
+                                        cy="50%"
+                                        labelLine={false}
+                                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                        outerRadius={120}
+                                        dataKey="value"
+                                    >
+                                        {categoryChartData.map((entry) => (
+                                            <Cell key={`cell-${entry.name}`} fill={COLORS[CATEGORY_ORDER[entry.name as keyof typeof CATEGORY_ORDER] % COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                                    <Legend />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    )}
+                    
+                    {routeDataAggregated.length > 0 && (
+                        <>
+                            <h3 className="analytics-card-section-title"><Route size={20}/> Top Routes by Revenue</h3>
+                            <div className="analytics-table-wrapper">
+                                <table className="user-management__table analytics-table--detailed">
+                                    <thead>
+                                        <tr>
+                                            <th rowSpan={2}>Route</th>
+                                            <th colSpan={4} style={{textAlign: 'center'}}>Bookings</th>
+                                            <th colSpan={4} style={{textAlign: 'center'}}>Revenue</th>
+                                        </tr>
+                                        <tr>
+                                            <th style={{textAlign: 'right'}}>Normal</th>
+                                            <th style={{textAlign: 'right'}}>Child</th>
+                                            <th style={{textAlign: 'right'}}>Senior</th>
+                                            <th style={{textAlign: 'right'}}>Total</th>
+                                            <th style={{textAlign: 'right'}}>Normal</th>
+                                            <th style={{textAlign: 'right'}}>Child</th>
+                                            <th style={{textAlign: 'right'}}>Senior</th>
+                                            <th style={{textAlign: 'right'}}>Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {routeDataAggregated.map((r) => (
+                                            <tr key={r.route}>
+                                                <td>{r.route}</td>
+                                                <td style={{textAlign: 'right'}}>{r.normalTickets.toLocaleString('en-IN')}</td>
+                                                <td style={{textAlign: 'right'}}>{r.childTickets.toLocaleString('en-IN')}</td>
+                                                <td style={{textAlign: 'right'}}>{r.seniorTickets.toLocaleString('en-IN')}</td>
+                                                <td style={{textAlign: 'right', fontWeight: 'bold'}}>{r.totalTickets.toLocaleString('en-IN')}</td>
+                                                <td style={{textAlign: 'right'}}>{formatCurrency(r.normalRevenue)}</td>
+                                                <td style={{textAlign: 'right'}}>{formatCurrency(r.childRevenue)}</td>
+                                                <td style={{textAlign: 'right'}}>{formatCurrency(r.seniorRevenue)}</td>
+                                                <td style={{textAlign: 'right', fontWeight: 'bold'}}>{formatCurrency(r.totalRevenue)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
+                    )}
                 </Card>
-            )}
+
+                {/* Column 2: District Performance */}
+                <Card>
+                    <h2 className="admin-dashboard__grid-title">District Performance</h2>
+                    {districtChartData.length > 0 && (
+                        <div style={{ width: '100%', height: 350 }}>
+                            <ResponsiveContainer>
+                                <BarChart data={districtChartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="district" tick={{ fontSize: 12 }} />
+                                    <YAxis 
+                                        tickFormatter={(value) => `₹${(Number(value)/1000).toFixed(0)}k`} 
+                                        tick={{ fontSize: 12 }} 
+                                    />
+                                    <Tooltip formatter={(value: number) => formatCurrency(Number(value))} />
+                                    <Legend />
+                                    <Bar dataKey="normal" stackId="a" fill={COLORS[0]} name="Normal" />
+                                    <Bar dataKey="child" stackId="a" fill={COLORS[1]} name="Child" />
+                                    <Bar dataKey="senior" stackId="a" fill={COLORS[2]} name="Senior" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    )}
+                    
+                    {districtDataAggregated.length > 0 && (
+                        <>
+                            <h3 className="analytics-card-section-title"><MapPin size={20}/> District Totals</h3>
+                             <div className="analytics-table-wrapper">
+                                <table className="user-management__table analytics-table--detailed">
+                                    <thead>
+                                        <tr>
+                                            <th rowSpan={2}>District</th>
+                                            <th colSpan={4} style={{textAlign: 'center'}}>Bookings</th>
+                                            <th colSpan={4} style={{textAlign: 'center'}}>Revenue</th>
+                                        </tr>
+                                        <tr>
+                                            <th style={{textAlign: 'right'}}>Normal</th>
+                                            <th style={{textAlign: 'right'}}>Child</th>
+                                            <th style={{textAlign: 'right'}}>Senior</th>
+                                            <th style={{textAlign: 'right'}}>Total</th>
+                                            <th style={{textAlign: 'right'}}>Normal</th>
+                                            <th style={{textAlign: 'right'}}>Child</th>
+                                            <th style={{textAlign: 'right'}}>Senior</th>
+                                            <th style={{textAlign: 'right'}}>Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {districtDataAggregated.map((d) => (
+                                            <tr key={d.district}>
+                                                <td>{d.district}</td>
+                                                <td style={{textAlign: 'right'}}>{d.normalTickets.toLocaleString('en-IN')}</td>
+                                                <td style={{textAlign: 'right'}}>{d.childTickets.toLocaleString('en-IN')}</td>
+                                                <td style={{textAlign: 'right'}}>{d.seniorTickets.toLocaleString('en-IN')}</td>
+                                                <td style={{textAlign: 'right', fontWeight: 'bold'}}>{d.totalTickets.toLocaleString('en-IN')}</td>
+                                                <td style={{textAlign: 'right'}}>{formatCurrency(d.normalRevenue)}</td>
+                                                <td style={{textAlign: 'right'}}>{formatCurrency(d.childRevenue)}</td>
+                                                <td style={{textAlign: 'right'}}>{formatCurrency(d.seniorRevenue)}</td>
+                                                <td style={{textAlign: 'right', fontWeight: 'bold'}}>{formatCurrency(d.totalRevenue)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
+                    )}
+                </Card>
+            </div>
         </div>
     );
 };
