@@ -66,8 +66,8 @@ export interface Schedule {
 export interface PassengerDetail {
     seatId: string;
     fullName: string;
-    aadhaarNumber: string;
-    type: 'CHILD' | 'SENIOR';
+    aadhaarNumber?: string;
+    type: 'CHILD' | 'SENIOR' | 'NORMAL';
 }
 
 export interface Booking {

@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
@@ -60,27 +61,25 @@ const SeatDetailsEditor: React.FC<{
                     {isDiscountEnabled && <option value="senior">Senior</option>}
                 </select>
             </div>
+            <Input 
+                id={`fullName-${seatId}`} 
+                label="Full Name"
+                value={details.fullName}
+                onChange={(e) => onDetailChange(seatId, 'fullName', e.target.value)}
+                placeholder="Enter passenger's full name"
+                required
+            />
             {(details.type === 'child' || details.type === 'senior') && (
-                 <>
-                    <Input 
-                        id={`fullName-${seatId}`} 
-                        label="Full Name"
-                        value={details.fullName}
-                        onChange={(e) => onDetailChange(seatId, 'fullName', e.target.value)}
-                        placeholder="Enter passenger's full name"
-                        required
-                    />
-                    <Input 
-                        id={`aadhaar-${seatId}`} 
-                        label="Aadhaar Number"
-                        value={details.aadhaar}
-                        onChange={(e) => onDetailChange(seatId, 'aadhaar', e.target.value.replace(/\D/g, '').slice(0, 12))}
-                        placeholder="Enter 12-digit number"
-                        maxLength={12}
-                        pattern="\d{12}"
-                        required
-                    />
-                </>
+                 <Input 
+                    id={`aadhaar-${seatId}`} 
+                    label="Aadhaar Number"
+                    value={details.aadhaar}
+                    onChange={(e) => onDetailChange(seatId, 'aadhaar', e.target.value.replace(/\D/g, '').slice(0, 12))}
+                    placeholder="Enter 12-digit number"
+                    maxLength={12}
+                    pattern="\d{12}"
+                    required
+                />
             )}
         </div>
     );
@@ -189,10 +188,11 @@ export const BookingPage: React.FC = () => {
         }
         setSelectedSeats(prev => [...prev, seatId]);
         if(mode === 'paid') {
-            setSeatDetails(prev => ({...prev, [seatId]: { type: 'normal', aadhaar: '', fullName: '' }}));
+            const isFirstSeat = selectedSeats.length === 0;
+            setSeatDetails(prev => ({...prev, [seatId]: { type: 'normal', aadhaar: '', fullName: isFirstSeat ? (user?.fullName || '') : '' }}));
         }
     }
-  }, [selectedSeats.length, MAX_SEATS, mode]);
+  }, [selectedSeats, MAX_SEATS, mode, user?.fullName]);
   
   const handleSeatDetailChange = (seatId: string, field: keyof SeatDetails[string], value: string) => {
       setSeatDetails(prev => ({
@@ -262,12 +262,11 @@ export const BookingPage: React.FC = () => {
 
     const passengerDetailsForQr = selectedSeats
         .map(seatId => ({ details: seatDetails[seatId], seatId }))
-        .filter(item => item.details.type === 'child' || item.details.type === 'senior')
         .map(item => ({
             seatId: item.seatId,
             fullName: item.details.fullName,
-            aadhaarNumber: `...${item.details.aadhaar.slice(-4)}`,
-            type: item.details.type.toUpperCase() as 'CHILD' | 'SENIOR',
+            aadhaarNumber: (item.details.type === 'child' || item.details.type === 'senior') ? `...${item.details.aadhaar.slice(-4)}` : undefined,
+            type: item.details.type.toUpperCase() as 'CHILD' | 'SENIOR' | 'NORMAL',
         }));
 
     const qrPayload = {
@@ -294,7 +293,7 @@ export const BookingPage: React.FC = () => {
         },
         bookingType: mode,
         bookingDate: new Date().toISOString(),
-        discountedPassengers: passengerDetailsForQr,
+        passengers: passengerDetailsForQr,
     };
     
     const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrPayload), { errorCorrectionLevel: 'H' });
@@ -305,41 +304,41 @@ export const BookingPage: React.FC = () => {
 
     let yPos = 100;
 
-    const seniorSeatDetails = selectedSeats.map(s => seatDetails[s]).filter(d => d.type === 'senior');
-    const childSeatDetails = selectedSeats.map(s => seatDetails[s]).filter(d => d.type === 'child');
-    const normalSeatsCount = selectedSeats.length - seniorSeatDetails.length - childSeatDetails.length;
-
     doc.setFont("helvetica", "bold");
     doc.text("Ticket Summary:", 20, yPos);
     yPos += 7;
     doc.setFont("helvetica", "normal");
-    if (normalSeatsCount > 0) {
-        const subtotal = normalSeatsCount * normalFare;
-        doc.text(`- Normal Tickets: ${normalSeatsCount} x ₹${normalFare.toFixed(2)} = ₹${subtotal.toFixed(2)}`, 25, yPos);
+    if (bookingSummary.normal > 0) {
+        const subtotal = bookingSummary.normal * normalFare;
+        doc.text(`- Normal Tickets: ${bookingSummary.normal} x ₹${normalFare.toFixed(2)} = ₹${subtotal.toFixed(2)}`, 25, yPos);
         yPos += 7;
     }
-    if (childSeatDetails.length > 0) {
-        const subtotal = childSeatDetails.length * childFare;
-        doc.text(`- Child Tickets: ${childSeatDetails.length} x ₹${childFare.toFixed(2)} = ₹${subtotal.toFixed(2)}`, 25, yPos);
+    if (bookingSummary.child > 0) {
+        const subtotal = bookingSummary.child * childFare;
+        doc.text(`- Child Tickets: ${bookingSummary.child} x ₹${childFare.toFixed(2)} = ₹${subtotal.toFixed(2)}`, 25, yPos);
         yPos += 7;
     }
-    if (seniorSeatDetails.length > 0) {
-        const subtotal = seniorSeatDetails.length * seniorFare;
-        doc.text(`- Senior Tickets: ${seniorSeatDetails.length} x ₹${seniorFare.toFixed(2)} = ₹${subtotal.toFixed(2)}`, 25, yPos);
+    if (bookingSummary.senior > 0) {
+        const subtotal = bookingSummary.senior * seniorFare;
+        doc.text(`- Senior Tickets: ${bookingSummary.senior} x ₹${seniorFare.toFixed(2)} = ₹${subtotal.toFixed(2)}`, 25, yPos);
         yPos += 7;
     }
     
-    const passengerDetails = [...childSeatDetails, ...seniorSeatDetails];
+    const passengerDetails = selectedSeats.map(seatId => seatDetails[seatId]);
     if (passengerDetails.length > 0) {
         yPos += 5;
         doc.setFont("helvetica", "bold");
-        doc.text("Discounted Passenger Details:", 20, yPos);
+        doc.text("Passenger Details:", 20, yPos);
         yPos += 7;
         doc.setFont("helvetica", "normal");
         
         passengerDetails.forEach((p, i) => {
-            const seatId = selectedSeats.find(s => seatDetails[s] === p);
-            doc.text(`- Seat ${seatId} (${p.type.toUpperCase()}): ${p.fullName}, Aadhaar: ...${p.aadhaar.slice(-4)}`, 25, yPos);
+            const seatId = selectedSeats[i];
+            let detailText = `- Seat ${seatId} (${p.type.toUpperCase()}): ${p.fullName}`;
+            if (p.type !== 'normal') {
+                detailText += `, Aadhaar: ...${p.aadhaar.slice(-4)}`;
+            }
+            doc.text(detailText, 25, yPos);
             yPos += 7;
             if (yPos > 280) { doc.addPage(); yPos = 20; }
         });
@@ -381,10 +380,10 @@ export const BookingPage: React.FC = () => {
                 const seatInfo: SeatBookingInfo = {
                     seatId: seatId,
                     type: details.type.toUpperCase() as 'NORMAL' | 'CHILD' | 'SENIOR',
+                    fullName: details.fullName,
                 };
                 if (details.type === 'child' || details.type === 'senior') {
                     seatInfo.aadhaarNumber = details.aadhaar;
-                    seatInfo.fullName = details.fullName;
                 }
                 return seatInfo;
             });
@@ -422,10 +421,13 @@ export const BookingPage: React.FC = () => {
     if (mode === 'free') {
         return !freeBookingDetails.registrationNumber || !freeBookingDetails.phone;
     }
-    // For paid mode, check if all required fields are filled for discounted tickets
+    // For paid mode, check if all required fields are filled
     for(const seatId of selectedSeats) {
         const details = seatDetails[seatId];
-        if ((details.type === 'child' || details.type === 'senior') && (details.aadhaar.length !== 12 || !details.fullName.trim())) {
+        if (!details || !details.fullName.trim()) { // All passengers need a name
+            return true;
+        }
+        if ((details.type === 'child' || details.type === 'senior') && details.aadhaar.length !== 12) {
             return true;
         }
     }

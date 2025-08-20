@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
@@ -8,7 +9,7 @@ import type { UserBooking, Schedule } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
-import { Download, QrCode, Calendar, IndianRupee, Star, Armchair, Baby, Accessibility, Users } from 'lucide-react';
+import { Download, QrCode, Calendar, IndianRupee, Star, Armchair } from 'lucide-react';
 
 const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
     const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -98,16 +99,7 @@ const BookingDetailCard: React.FC<{ booking: UserBooking }> = ({ booking }) => {
         if (booking.isFreeTicket) {
             return <span className="booking-detail-card__tag tag-free"><Star size={12}/> FREE TICKET</span>;
         }
-        switch (booking.discountType) {
-            case 'CHILD':
-                return <span className="booking-detail-card__tag tag-child"><Baby size={12}/> CHILD DISCOUNT</span>;
-            case 'SENIOR':
-                return <span className="booking-detail-card__tag tag-senior"><Accessibility size={12}/> SENIOR DISCOUNT</span>;
-            case 'MIXED':
-                return <span className="booking-detail-card__tag tag-mixed"><Users size={12}/> MIXED DISCOUNT</span>;
-            default:
-                return null;
-        }
+        return null;
     };
 
 
