@@ -1385,67 +1385,88 @@ apiRouter.delete('/users/:id', requireAdmin, async (req, res) => {
         connection.release();
     }
 });
-
 apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => {
-    const user = req.user;
-    let assignedDistricts = [];
-    const queryParams = [];
+  const user = req.user;
+  let assignedDistricts = [];
 
-    try {
-        if (user.role === 'SUB_ADMIN') {
-            assignedDistricts = user.assignedDistricts || [];
-            if (assignedDistricts.length === 0) {
-                return res.json({ summary: { totalRevenue: 0, totalPaidBookings: 0, totalFreeTickets: 0, totalBookings: 0 }, byDistrict: [], byRoute: [] });
-            }
-        }
-
-        let districtQuery = `
-            SELECT rs.stopName AS district, SUM(b.fare) AS revenue,
-                   SUM(CASE WHEN b.isFreeTicket = 0 THEN 1 ELSE 0 END) AS paidBookings,
-                   SUM(CASE WHEN b.isFreeTicket = 1 THEN 1 ELSE 0 END) AS freeTickets
-            FROM bookings b JOIN routestops rs ON b.scheduleId = rs.scheduleId
-            WHERE rs.stopOrder = 0 AND rs.stopName IS NOT NULL AND TRIM(rs.stopName) <> ''`;
-
-        if (assignedDistricts.length > 0) {
-            districtQuery += ` AND rs.stopName IN (?)`;
-            queryParams.push(assignedDistricts);
-        }
-        districtQuery += ` GROUP BY rs.stopName ORDER BY revenue DESC`;
-
-        const [districtData] = await dbPool.query(districtQuery, queryParams);
-        const byDistrict = districtData.map(d => ({
-            district: d.district,
-            revenue: parseFloat(d.revenue) || 0,
-            paidBookings: parseInt(d.paidBookings, 10) || 0,
-            freeTickets: parseInt(d.freeTickets, 10) || 0,
-            totalBookings: (parseInt(d.paidBookings, 10) || 0) + (parseInt(d.freeTickets, 10) || 0),
-        }));
-
-        const summary = byDistrict.reduce((acc, item) => {
-            acc.totalRevenue += item.revenue; acc.totalPaidBookings += item.paidBookings;
-            acc.totalFreeTickets += item.totalFreeTickets; acc.totalBookings += item.totalBookings;
-            return acc;
-        }, { totalRevenue: 0, totalPaidBookings: 0, totalFreeTickets: 0, totalBookings: 0 });
-
-        const responsePayload = { summary, byDistrict };
-
-        if (assignedDistricts.length > 0) {
-            const routeQuery = `
-                SELECT b.scheduleId, s.busName,
-                       (SELECT stopName FROM routestops WHERE scheduleId = b.scheduleId AND stopOrder = 0 LIMIT 1) AS origin,
-                       (SELECT stopName FROM routestops WHERE scheduleId = b.scheduleId ORDER BY stopOrder DESC LIMIT 1) AS destination,
-                       SUM(b.fare) AS revenue, COUNT(b.id) AS totalBookings
-                FROM bookings b JOIN schedules s ON b.scheduleId = s.id
-                WHERE (SELECT stopName FROM routestops WHERE scheduleId = b.scheduleId AND stopOrder = 0 LIMIT 1) IN (?)
-                GROUP BY b.scheduleId, s.busName ORDER BY revenue DESC`;
-            const [routeData] = await dbPool.query(routeQuery, [assignedDistricts]);
-            responsePayload.byRoute = routeData.map(r => ({ ...r, revenue: parseFloat(r.revenue) || 0, totalBookings: parseInt(r.totalBookings, 10) || 0 }));
-        }
-        res.json(responsePayload);
-    } catch (error) {
-        handleDBError(res, error, 'getRevenueAnalytics');
+  try {
+    if (user.role === 'SUB_ADMIN') {
+      assignedDistricts = user.assignedDistricts || [];
+      if (assignedDistricts.length === 0) {
+        return res.json({ summary: {}, byDistrict: [], byRoute: [], byCategory: [] });
+      }
     }
+
+    // --- Category-wise revenue/tickets (overall) ---
+    const [categoryRows] = await dbPool.query(`
+      SELECT type,
+             COUNT(*) AS tickets,
+             SUM(fare) AS revenue
+      FROM bookings b
+      JOIN JSON_TABLE(b.passengerDetails, '$[*]' 
+        COLUMNS (
+          type VARCHAR(20) PATH '$.type',
+          fare DECIMAL(10,2) PATH '$.fare'
+        )
+      ) AS p
+      WHERE b.isFreeTicket = 0
+      ${assignedDistricts.length ? 'AND b.origin IN (?)' : ''}
+      GROUP BY type
+    `, assignedDistricts.length ? [assignedDistricts] : []);
+
+    // --- District-wise ---
+    const [districtRows] = await dbPool.query(`
+      SELECT b.origin AS district,
+             p.type,
+             COUNT(*) AS tickets,
+             SUM(p.fare) AS revenue
+      FROM bookings b
+      JOIN JSON_TABLE(b.passengerDetails, '$[*]' 
+        COLUMNS (
+          type VARCHAR(20) PATH '$.type',
+          fare DECIMAL(10,2) PATH '$.fare'
+        )
+      ) AS p
+      WHERE b.isFreeTicket = 0
+      ${assignedDistricts.length ? 'AND b.origin IN (?)' : ''}
+      GROUP BY b.origin, p.type
+      ORDER BY revenue DESC
+    `, assignedDistricts.length ? [assignedDistricts] : []);
+
+    // --- Route-wise ---
+    const [routeRows] = await dbPool.query(`
+      SELECT CONCAT(b.origin, ' -> ', b.destination) AS route,
+             p.type,
+             COUNT(*) AS tickets,
+             SUM(p.fare) AS revenue
+      FROM bookings b
+      JOIN JSON_TABLE(b.passengerDetails, '$[*]' 
+        COLUMNS (
+          type VARCHAR(20) PATH '$.type',
+          fare DECIMAL(10,2) PATH '$.fare'
+        )
+      ) AS p
+      WHERE b.isFreeTicket = 0
+      ${assignedDistricts.length ? 'AND b.origin IN (?)' : ''}
+      GROUP BY route, p.type
+      ORDER BY revenue DESC
+    `, assignedDistricts.length ? [assignedDistricts] : []);
+
+    res.json({
+      summary: {
+        totalRevenue: categoryRows.reduce((a, r) => a + (r.revenue || 0), 0),
+        totalTickets: categoryRows.reduce((a, r) => a + (r.tickets || 0), 0)
+      },
+      byCategory: categoryRows,
+      byDistrict: districtRows,
+      byRoute: routeRows
+    });
+
+  } catch (err) {
+    handleDBError(res, err, 'getRevenueAnalyticsDetailed');
+  }
 });
+
 
 app.use('/api', apiRouter);
 

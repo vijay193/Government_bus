@@ -1,6 +1,4 @@
 
-
-
 export enum UserRole {
     USER = 'USER',
     ADMIN = 'ADMIN',
@@ -15,7 +13,7 @@ export interface User {
     role: UserRole;
     gender?: 'MALE' | 'FEMALE' | 'OTHER';
     dob?: string;
-    password?: string | null; // Allow password to be null for OTP users
+    password?: string | null;
     assignedDistricts?: string[];
     govtExamRegistrationNumber?: string;
     isFreeTicketEligible?: boolean;
@@ -25,11 +23,11 @@ export interface PassCard {
   id: number;
   userId: string;
   passCardNumber: string;
-  userImage: string; // base64 string
+  userImage: string;
   fatherName: string;
   origin: string;
   destination: string;
-  expiryDate: string; // ISO date string
+  expiryDate: string;
   fullName: string;
   dob: string;
 }
@@ -49,39 +47,33 @@ export interface Schedule {
     origin?: string;
     destination?: string;
     busName: string;
-    departureTime: string; // "HH:mm" format
-    arrivalTime: string; // "HH:mm" format
+    departureTime: string;
+    arrivalTime: string;
     via: string[];
     seatLayout: SeatLayout;
     bookingEnabled: boolean;
     isFreeBookingEnabled?: boolean;
-    isDiscountEnabled?: boolean; // New field for discounts
+    isDiscountEnabled?: boolean;
     fare: number;
-    userOrigin?: string; // For search results on segments
-    userDestination?: string; // For search results on segments
+    userOrigin?: string;
+    userDestination?: string;
     fullRoute?: string;
-    fullRouteStops?: RouteStop[]; // Detailed stops for editing
+    fullRouteStops?: RouteStop[];
 }
 
 export interface PassengerDetail {
     seatId: string;
     fullName: string;
-    aadhaarNumber?: string;
+    aadhaarNumber: string;
     type: 'CHILD' | 'SENIOR' | 'NORMAL';
+    fare: number;
 }
 
-export interface Booking {
-    id: string;
-    userId: string;
-    scheduleId: string;
-    fare: number;
-    bookingDate: string; // ISO string
-    seats: BookedSeat[];
-    origin: string; // The user's boarding point
-    destination: string; // The user's deboarding point
-    discountType: 'NONE' | 'CHILD' | 'SENIOR' | 'MIXED';
-    aadhaarNumber: string | null; // Kept for legacy data, new bookings use passengerDetails
-    passengerDetails?: PassengerDetail[];
+export interface SeatBookingInfo {
+    seatId: string;
+    type: 'NORMAL' | 'CHILD' | 'SENIOR';
+    fullName: string;
+    aadhaarNumber?: string;
 }
 
 export interface UserBooking {
@@ -89,76 +81,38 @@ export interface UserBooking {
     scheduleId: string;
     fare: number;
     isFreeTicket: boolean;
-    govtExamRegistrationNumber: string | null;
-    bookingDate: string; // ISO string
+    govtExamRegistrationNumber?: string;
+    bookingDate: string;
     origin: string;
     destination: string;
-    seatIds: string[];
     discountType: 'NONE' | 'CHILD' | 'SENIOR' | 'MIXED';
     passengerDetails?: PassengerDetail[];
-}
-
-export interface BookedSeat {
-    id: number;
-    bookingId: string;
-    seatId: string; // e.g., 'A1', 'C3'
+    seatIds?: string[];
 }
 
 export interface BusLocation {
     busId: string;
     lat: number;
     lng: number;
-    lastUpdated: string; // ISO string
+    lastUpdated: string;
     route: { lat: number, lng: number }[];
 }
 
-// --- Revenue Analytics Types ---
-export interface RevenueSummary {
-    totalRevenue: number;
-    totalPaidBookings: number;
-    totalFreeTickets: number;
-    totalBookings: number;
-}
-export interface DistrictRevenue {
-    district: string;
-    revenue: number;
-    paidBookings: number;
-    freeTickets: number;
-    totalBookings: number;
-}
-export interface RouteRevenue {
-    scheduleId: string;
-    busName: string;
-    origin: string;
-    destination: string;
-    revenue: number;
-    totalBookings: number;
-}
-
-export interface RevenueAnalyticsData {
-    summary: RevenueSummary;
-    byDistrict: DistrictRevenue[];
-    byRoute?: RouteRevenue[];
-}
-
-// --- Schedule Upload Types ---
 export interface ParsedStop {
-  stopName: string;
-  arrivalTime: string | null;
-  departureTime: string;
-  fareFromOrigin: number;
-  stopOrder?: number;
+    stopName: string;
+    arrivalTime: string | null;
+    departureTime: string;
+    fareFromOrigin: number;
+    stopOrder?: number;
 }
-
 export interface ParsedSchedule {
-  id?: string;
-  busName: string;
-  seatLayout: SeatLayout;
-  bookingEnabled: boolean;
-  stops: ParsedStop[];
+    id: string;
+    busName: string;
+    seatLayout: SeatLayout;
+    bookingEnabled: boolean;
+    stops: ParsedStop[];
 }
 
-// --- Beneficiary Upload Types ---
 export interface ParsedBeneficiary {
     govtExamRegistrationNumber: string;
     phone: string;
@@ -168,9 +122,29 @@ export interface ParsedBeneficiary {
     password?: string;
 }
 
-export interface SeatBookingInfo {
-    seatId: string;
-    type: 'NORMAL' | 'CHILD' | 'SENIOR';
-    fullName?: string;
-    aadhaarNumber?: string;
+// --- Revenue Analytics Types ---
+export interface AnalyticsDataPoint {
+  type: 'NORMAL' | 'CHILD' | 'SENIOR';
+  tickets: number;
+  revenue: number;
+}
+
+export interface DistrictAnalyticsDataPoint extends AnalyticsDataPoint {
+    district: string;
+}
+
+export interface RouteAnalyticsDataPoint extends AnalyticsDataPoint {
+    route: string;
+}
+
+export interface RevenueSummary {
+    totalRevenue: number;
+    totalTickets: number;
+}
+
+export interface RevenueAnalyticsData {
+    summary: RevenueSummary;
+    byCategory: AnalyticsDataPoint[];
+    byDistrict: DistrictAnalyticsDataPoint[];
+    byRoute: RouteAnalyticsDataPoint[];
 }
