@@ -118,8 +118,10 @@ export const api = {
     getScheduleById: (id: string): Promise<Schedule | null> =>
         apiFetch(`${API_BASE_URL}/schedules/${encodeURIComponent(id)}`),
 
-    getBookedSeatsForSchedule: (scheduleId: string): Promise<string[]> =>
-        apiFetch(`${API_BASE_URL}/bookings/seats/${encodeURIComponent(scheduleId)}`),
+    getBookedSeatsForSchedule: (scheduleId: string, origin: string, destination: string): Promise<string[]> => {
+        const params = new URLSearchParams({ origin, destination });
+        return apiFetch(`${API_BASE_URL}/bookings/seats/${encodeURIComponent(scheduleId)}?${params.toString()}`);
+    },
 
     trackBus: (busId: string): Promise<BusLocation | null> =>
         apiFetch(`${API_BASE_URL}/tracking/${encodeURIComponent(busId)}`),

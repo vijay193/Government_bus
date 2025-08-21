@@ -120,10 +120,7 @@ export const BookingPage: React.FC = () => {
       setIsLoading(true);
       setError(null);
       try {
-        const [scheduleData, bookedSeatsData] = await Promise.all([
-          api.getScheduleById(scheduleId),
-          api.getBookedSeatsForSchedule(scheduleId)
-        ]);
+        const scheduleData = await api.getScheduleById(scheduleId);
         
         if (scheduleData) {
           if (!scheduleData.bookingEnabled) {
@@ -131,6 +128,15 @@ export const BookingPage: React.FC = () => {
             setSchedule(null);
           } else {
             setSchedule(scheduleData);
+            const origin = userOrigin || scheduleData.origin;
+            const destination = userDestination || scheduleData.destination;
+
+            if (!origin || !destination) {
+                setError("Could not determine origin and destination for booking.");
+                return;
+            }
+
+            const bookedSeatsData = await api.getBookedSeatsForSchedule(scheduleId, origin, destination);
             setBookedSeats(bookedSeatsData);
           }
         } else {
@@ -160,7 +166,7 @@ export const BookingPage: React.FC = () => {
 
     fetchBookingData();
     fetchDiscounts();
-  }, [scheduleId]);
+  }, [scheduleId, userOrigin, userDestination]);
 
     const handleModeChange = (newMode: BookingMode) => {
         setMode(newMode);

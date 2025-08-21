@@ -1,4 +1,5 @@
 
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -774,15 +775,60 @@ apiRouter.get('/bookings/user/:userId', requireAuth, async (req, res) => {
 });
 
 apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
-  try {
-    const [rows] = await dbPool.query(
-      `SELECT bs.seatId FROM bookedseats bs JOIN bookings b ON bs.bookingId = b.id WHERE b.scheduleId = ?`,
-      [req.params.scheduleId]
-    );
-    res.json(rows.map(row => row.seatId));
-  } catch (error) {
-    handleDBError(res, error, 'getBookedSeats');
-  }
+    const { scheduleId } = req.params;
+    const { origin: userOrigin, destination: userDestination } = req.query;
+
+    if (!userOrigin || !userDestination) {
+        return res.status(400).json({ message: 'Origin and destination query parameters are required.' });
+    }
+
+    try {
+        const schedulesMap = await fetchAndAssembleSchedules(dbPool, scheduleId);
+        const schedule = schedulesMap[scheduleId];
+
+        if (!schedule || !schedule.fullRouteStops) {
+            return res.status(404).json({ message: 'Schedule not found or has no stops.' });
+        }
+        
+        const stopOrderMap = schedule.fullRouteStops.reduce((acc, stop) => {
+            acc[stop.normalizedName] = stop.order;
+            return acc;
+        }, {});
+
+        const userOriginOrder = stopOrderMap[userOrigin.trim().toLowerCase()];
+        const userDestinationOrder = stopOrderMap[userDestination.trim().toLowerCase()];
+
+        if (userOriginOrder === undefined || userDestinationOrder === undefined || userOriginOrder >= userDestinationOrder) {
+            return res.status(400).json({ message: 'Invalid origin or destination for this route.' });
+        }
+
+        const [bookedSegments] = await dbPool.query(
+            `SELECT bs.seatId, b.origin, b.destination
+             FROM bookedseats bs
+             JOIN bookings b ON bs.bookingId = b.id
+             WHERE b.scheduleId = ?`,
+            [scheduleId]
+        );
+
+        const unavailableSeats = new Set();
+        for (const segment of bookedSegments) {
+            const bookingOriginOrder = stopOrderMap[segment.origin.trim().toLowerCase()];
+            const bookingDestinationOrder = stopOrderMap[segment.destination.trim().toLowerCase()];
+            
+            if (bookingOriginOrder === undefined || bookingDestinationOrder === undefined) {
+                continue;
+            }
+
+            if (Math.max(userOriginOrder, bookingOriginOrder) < Math.min(userDestinationOrder, bookingDestinationOrder)) {
+                 unavailableSeats.add(segment.seatId);
+            }
+        }
+        
+        res.json(Array.from(unavailableSeats));
+
+    } catch (error) {
+        handleDBError(res, error, 'getBookedSeatsForSegment');
+    }
 });
 
 apiRouter.post('/bookings/free', requireAuth, async (req, res) => {
