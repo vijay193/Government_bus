@@ -1,7 +1,8 @@
+
 import React from 'react';
 import { Card } from '../../components/common/Card';
 import { Link } from 'react-router-dom';
-import { Settings, Users, DollarSign } from 'lucide-react';
+import { Settings, Users, IndianRupee } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { UserRole } from '../../types';
 
@@ -31,7 +32,7 @@ export const AdminDashboardPage: React.FC = () => {
                     </p>
                 </Link>
                 <Link to="/admin/revenue" className="admin-dashboard__grid-item">
-                    <DollarSign className="admin-dashboard__grid-icon" />
+                    <IndianRupee className="admin-dashboard__grid-icon" />
                     <h3 className="admin-dashboard__grid-title">Revenue Analytics</h3>
                     <p className="admin-dashboard__grid-text">
                         {user?.role === UserRole.ADMIN 

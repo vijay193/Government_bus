@@ -1,7 +1,8 @@
 
+
 import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Settings, Users, DollarSign, UploadCloud, List, UserPlus } from 'lucide-react';
+import { LayoutDashboard, Settings, Users, IndianRupee, UploadCloud, List, UserPlus } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { UserRole } from '../../types';
 
@@ -38,7 +39,7 @@ export const AdminLayout: React.FC = () => {
                             <span>User Management</span>
                         </NavLink>
                         <NavLink to="/admin/revenue" className={getNavLinkClass}>
-                            <DollarSign size={20} />
+                            <IndianRupee size={20} />
                             <span>Revenue Analytics</span>
                         </NavLink>
                         <NavLink to="/admin/schedules" className={getNavLinkClass}>

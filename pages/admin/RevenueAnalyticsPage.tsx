@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useAuth } from '../../hooks/useAuth';
@@ -6,7 +8,6 @@ import { api } from '../../services/api';
 import type { RevenueAnalyticsData, AnalyticsDataPoint } from '../../types';
 import { Card } from '../../components/common/Card';
 import { UserRole } from '../../types';
-import { DollarSign, Ticket, TrendingUp, AlertCircle, Users, Route, MapPin } from 'lucide-react';
 
 const COLORS = ['#4f46e5', '#16a34a', '#f59e0b']; // NORMAL, CHILD, SENIOR
 const CATEGORY_ORDER: { [key: string]: number } = { 'NORMAL': 0, 'CHILD': 1, 'SENIOR': 2 };
@@ -18,7 +19,7 @@ const formatCurrency = (value: number | null | undefined) => {
     return `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-const AnalyticsSummaryCard: React.FC<{ title: string; value: string; icon: React.ReactNode }> = ({ title, value, icon }) => (
+const AnalyticsSummaryCard: React.FC<{ title: string; value: React.ReactNode; icon: React.ReactNode }> = ({ title, value, icon }) => (
     <Card className="analytics-summary-card">
         <div className="analytics-summary-card__content">
             <div className="analytics-summary-card__icon-wrapper">
@@ -31,6 +32,17 @@ const AnalyticsSummaryCard: React.FC<{ title: string; value: string; icon: React
         </div>
     </Card>
 );
+
+const DataBarCell: React.FC<{ value: number; maxValue: number; formatter: (val: number) => string | number }> = ({ value, maxValue, formatter }) => {
+    const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0;
+    return (
+        <td className="data-bar-cell">
+            <div className="data-bar" style={{ width: `${percentage}%` }} />
+            <span className="data-bar-label">{formatter(value)}</span>
+        </td>
+    );
+};
+
 
 export const RevenueAnalyticsPage: React.FC = () => {
     const [data, setData] = useState<RevenueAnalyticsData | null>(null);
@@ -73,8 +85,8 @@ export const RevenueAnalyticsPage: React.FC = () => {
         return Array.from(districtMap.values());
     }, [data?.byDistrict]);
 
-    const routeDataAggregated = useMemo(() => {
-        if (!data?.byRoute) return [];
+    const routeData = useMemo(() => {
+        if (!data?.byRoute) return { routes: [], maxRevenue: 0, maxTickets: 0 };
         const routeMap = new Map<string, {
             route: string;
             normalTickets: number; childTickets: number; seniorTickets: number; totalTickets: number;
@@ -110,11 +122,14 @@ export const RevenueAnalyticsPage: React.FC = () => {
             }
         });
 
-        return Array.from(routeMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
+        const routes = Array.from(routeMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
+        const maxRevenue = Math.max(...routes.map(r => r.totalRevenue), 0);
+        const maxTickets = Math.max(...routes.map(r => r.totalTickets), 0);
+        return { routes, maxRevenue, maxTickets };
     }, [data?.byRoute]);
 
-    const districtDataAggregated = useMemo(() => {
-        if (!data?.byDistrict) return [];
+    const districtData = useMemo(() => {
+        if (!data?.byDistrict) return { districts: [], maxRevenue: 0, maxTickets: 0 };
         const districtMap = new Map<string, {
             district: string;
             normalTickets: number; childTickets: number; seniorTickets: number; totalTickets: number;
@@ -150,7 +165,10 @@ export const RevenueAnalyticsPage: React.FC = () => {
             }
         });
     
-        return Array.from(districtMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
+        const districts = Array.from(districtMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
+        const maxRevenue = Math.max(...districts.map(d => d.totalRevenue), 0);
+        const maxTickets = Math.max(...districts.map(d => d.totalTickets), 0);
+        return { districts, maxRevenue, maxTickets };
     }, [data?.byDistrict]);
 
 
@@ -162,7 +180,7 @@ export const RevenueAnalyticsPage: React.FC = () => {
         return (
             <Card>
                 <div className="auth-form__error">
-                    <AlertCircle size={24} />
+                    <i className="icon icon-alert-circle" style={{ fontSize: '24px' }}></i>
                     <p>{error}</p>
                 </div>
             </Card>
@@ -183,7 +201,7 @@ export const RevenueAnalyticsPage: React.FC = () => {
     return (
         <div className="space-y-8">
             <Card>
-                <h1 className="admin-page-header__title"><TrendingUp /> Revenue Analytics</h1>
+                <h1 className="admin-page-header__title"><i className="icon icon-trending-up"></i> Revenue Analytics</h1>
                 <p className="admin-page-header__subtitle">
                     {user?.role === UserRole.ADMIN ? 'Global overview of all revenue streams.' : 'Performance overview for your assigned districts.'}
                 </p>
@@ -191,14 +209,14 @@ export const RevenueAnalyticsPage: React.FC = () => {
 
             {/* Summary */}
             <div className="analytics-summary-grid">
-                <AnalyticsSummaryCard title="Total Revenue" value={formatCurrency(summary.totalRevenue)} icon={<DollarSign className="analytics-summary-card__icon" />} />
-                <AnalyticsSummaryCard title="Total Tickets" value={(summary.totalTickets || 0).toLocaleString('en-IN')} icon={<Ticket className="analytics-summary-card__icon" />} />
+                <AnalyticsSummaryCard title="Total Revenue" value={formatCurrency(summary.totalRevenue)} icon={<i className="icon icon-rupee analytics-summary-card__icon"></i>} />
+                <AnalyticsSummaryCard title="Total Tickets" value={<>{(summary.totalTickets || 0).toLocaleString('en-IN')} <small>tickets sold</small></>} icon={<i className="icon icon-ticket analytics-summary-card__icon"></i>} />
                 {byCategory.sort((a, b) => (CATEGORY_ORDER[a.type] || 99) - (CATEGORY_ORDER[b.type] || 99)).map((c: AnalyticsDataPoint) => (
                     <AnalyticsSummaryCard
                         key={c.type}
                         title={`${c.type} Revenue`}
-                        value={`${formatCurrency(c.revenue)} (${c.tickets} tickets)`}
-                        icon={<Users className="analytics-summary-card__icon" style={{ color: COLORS[CATEGORY_ORDER[c.type] || 0] }} />}
+                        value={<>{formatCurrency(c.revenue)} <small>({c.tickets} tickets)</small></>}
+                        icon={<i className="icon icon-users analytics-summary-card__icon" style={{ color: COLORS[CATEGORY_ORDER[c.type] || 0] }}></i>}
                     />
                 ))}
             </div>
@@ -231,40 +249,40 @@ export const RevenueAnalyticsPage: React.FC = () => {
                         </div>
                     )}
                     
-                    {routeDataAggregated.length > 0 && (
+                    {routeData.routes.length > 0 && (
                         <>
-                            <h3 className="analytics-card-section-title"><Route size={20}/> Top Routes by Revenue</h3>
+                            <h3 className="analytics-card-section-title"><i className="icon icon-route" style={{ fontSize: '20px' }}></i> Top Routes by Revenue</h3>
                             <div className="analytics-table-wrapper">
                                 <table className="user-management__table analytics-table--detailed">
                                     <thead>
                                         <tr>
                                             <th rowSpan={2}>Route</th>
-                                            <th colSpan={4} style={{textAlign: 'center'}}>Bookings</th>
-                                            <th colSpan={4} style={{textAlign: 'center'}}>Revenue</th>
+                                            <th colSpan={4} className="text-center">Bookings</th>
+                                            <th colSpan={4} className="text-center">Revenue</th>
                                         </tr>
                                         <tr>
-                                            <th style={{textAlign: 'right'}}>Normal</th>
-                                            <th style={{textAlign: 'right'}}>Child</th>
-                                            <th style={{textAlign: 'right'}}>Senior</th>
-                                            <th style={{textAlign: 'right'}}>Total</th>
-                                            <th style={{textAlign: 'right'}}>Normal</th>
-                                            <th style={{textAlign: 'right'}}>Child</th>
-                                            <th style={{textAlign: 'right'}}>Senior</th>
-                                            <th style={{textAlign: 'right'}}>Total</th>
+                                            <th className="text-right">Normal</th>
+                                            <th className="text-right">Child</th>
+                                            <th className="text-right">Senior</th>
+                                            <th className="text-right">Total</th>
+                                            <th className="text-right">Normal</th>
+                                            <th className="text-right">Child</th>
+                                            <th className="text-right">Senior</th>
+                                            <th className="text-right">Total</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {routeDataAggregated.map((r) => (
+                                        {routeData.routes.map((r) => (
                                             <tr key={r.route}>
-                                                <td>{r.route}</td>
-                                                <td style={{textAlign: 'right'}}>{r.normalTickets.toLocaleString('en-IN')}</td>
-                                                <td style={{textAlign: 'right'}}>{r.childTickets.toLocaleString('en-IN')}</td>
-                                                <td style={{textAlign: 'right'}}>{r.seniorTickets.toLocaleString('en-IN')}</td>
-                                                <td style={{textAlign: 'right', fontWeight: 'bold'}}>{r.totalTickets.toLocaleString('en-IN')}</td>
-                                                <td style={{textAlign: 'right'}}>{formatCurrency(r.normalRevenue)}</td>
-                                                <td style={{textAlign: 'right'}}>{formatCurrency(r.childRevenue)}</td>
-                                                <td style={{textAlign: 'right'}}>{formatCurrency(r.seniorRevenue)}</td>
-                                                <td style={{textAlign: 'right', fontWeight: 'bold'}}>{formatCurrency(r.totalRevenue)}</td>
+                                                <td><b>{r.route}</b></td>
+                                                <td className="text-right">{r.normalTickets.toLocaleString('en-IN')}</td>
+                                                <td className="text-right">{r.childTickets.toLocaleString('en-IN')}</td>
+                                                <td className="text-right">{r.seniorTickets.toLocaleString('en-IN')}</td>
+                                                <DataBarCell value={r.totalTickets} maxValue={routeData.maxTickets} formatter={(v) => v.toLocaleString('en-IN')} />
+                                                <td className="text-right">{formatCurrency(r.normalRevenue)}</td>
+                                                <td className="text-right">{formatCurrency(r.childRevenue)}</td>
+                                                <td className="text-right">{formatCurrency(r.seniorRevenue)}</td>
+                                                <DataBarCell value={r.totalRevenue} maxValue={routeData.maxRevenue} formatter={formatCurrency} />
                                             </tr>
                                         ))}
                                     </tbody>
@@ -297,40 +315,40 @@ export const RevenueAnalyticsPage: React.FC = () => {
                         </div>
                     )}
                     
-                    {districtDataAggregated.length > 0 && (
+                    {districtData.districts.length > 0 && (
                         <>
-                            <h3 className="analytics-card-section-title"><MapPin size={20}/> District Totals</h3>
+                            <h3 className="analytics-card-section-title"><i className="icon icon-map-pin" style={{ fontSize: '20px' }}></i> District Totals</h3>
                              <div className="analytics-table-wrapper">
                                 <table className="user-management__table analytics-table--detailed">
                                     <thead>
                                         <tr>
                                             <th rowSpan={2}>District</th>
-                                            <th colSpan={4} style={{textAlign: 'center'}}>Bookings</th>
-                                            <th colSpan={4} style={{textAlign: 'center'}}>Revenue</th>
+                                            <th colSpan={4} className="text-center">Bookings</th>
+                                            <th colSpan={4} className="text-center">Revenue</th>
                                         </tr>
                                         <tr>
-                                            <th style={{textAlign: 'right'}}>Normal</th>
-                                            <th style={{textAlign: 'right'}}>Child</th>
-                                            <th style={{textAlign: 'right'}}>Senior</th>
-                                            <th style={{textAlign: 'right'}}>Total</th>
-                                            <th style={{textAlign: 'right'}}>Normal</th>
-                                            <th style={{textAlign: 'right'}}>Child</th>
-                                            <th style={{textAlign: 'right'}}>Senior</th>
-                                            <th style={{textAlign: 'right'}}>Total</th>
+                                            <th className="text-right">Normal</th>
+                                            <th className="text-right">Child</th>
+                                            <th className="text-right">Senior</th>
+                                            <th className="text-right">Total</th>
+                                            <th className="text-right">Normal</th>
+                                            <th className="text-right">Child</th>
+                                            <th className="text-right">Senior</th>
+                                            <th className="text-right">Total</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {districtDataAggregated.map((d) => (
+                                        {districtData.districts.map((d) => (
                                             <tr key={d.district}>
-                                                <td>{d.district}</td>
-                                                <td style={{textAlign: 'right'}}>{d.normalTickets.toLocaleString('en-IN')}</td>
-                                                <td style={{textAlign: 'right'}}>{d.childTickets.toLocaleString('en-IN')}</td>
-                                                <td style={{textAlign: 'right'}}>{d.seniorTickets.toLocaleString('en-IN')}</td>
-                                                <td style={{textAlign: 'right', fontWeight: 'bold'}}>{d.totalTickets.toLocaleString('en-IN')}</td>
-                                                <td style={{textAlign: 'right'}}>{formatCurrency(d.normalRevenue)}</td>
-                                                <td style={{textAlign: 'right'}}>{formatCurrency(d.childRevenue)}</td>
-                                                <td style={{textAlign: 'right'}}>{formatCurrency(d.seniorRevenue)}</td>
-                                                <td style={{textAlign: 'right', fontWeight: 'bold'}}>{formatCurrency(d.totalRevenue)}</td>
+                                                <td><b>{d.district}</b></td>
+                                                <td className="text-right">{d.normalTickets.toLocaleString('en-IN')}</td>
+                                                <td className="text-right">{d.childTickets.toLocaleString('en-IN')}</td>
+                                                <td className="text-right">{d.seniorTickets.toLocaleString('en-IN')}</td>
+                                                <DataBarCell value={d.totalTickets} maxValue={districtData.maxTickets} formatter={(v) => v.toLocaleString('en-IN')} />
+                                                <td className="text-right">{formatCurrency(d.normalRevenue)}</td>
+                                                <td className="text-right">{formatCurrency(d.childRevenue)}</td>
+                                                <td className="text-right">{formatCurrency(d.seniorRevenue)}</td>
+                                                <DataBarCell value={d.totalRevenue} maxValue={districtData.maxRevenue} formatter={formatCurrency} />
                                             </tr>
                                         ))}
                                     </tbody>
