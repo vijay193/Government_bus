@@ -1,4 +1,5 @@
 
+
 export enum UserRole {
     USER = 'USER',
     ADMIN = 'ADMIN',
@@ -67,6 +68,7 @@ export interface PassengerDetail {
     aadhaarNumber: string;
     type: 'CHILD' | 'SENIOR' | 'NORMAL';
     fare: number;
+    status?: 'BOOKED' | 'CANCELLED';
 }
 
 export interface SeatBookingInfo {
@@ -80,6 +82,8 @@ export interface UserBooking {
     id: string;
     scheduleId: string;
     fare: number;
+    originalFare?: number;
+    status?: 'CONFIRMED' | 'PARTIALLY_CANCELLED' | 'CANCELLED';
     isFreeTicket: boolean;
     govtExamRegistrationNumber?: string;
     bookingDate: string;

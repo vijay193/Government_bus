@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '../../components/common/Card';
 import { api } from '../../services/api';
@@ -309,6 +310,11 @@ export const AdminSettingsPage: React.FC = () => {
                             settingKey="isFreeBookingEnabled"
                             title="Free Booking (Govt. Special)"
                             description="Enable free tickets for verified beneficiaries."
+                        />
+                        <SettingToggle 
+                            settingKey="isCancellationEnabled"
+                            title="Ticket Cancellation System"
+                            description="Allow users to cancel their bookings up to 1 hour before departure."
                         />
                     </div>
                 </div>

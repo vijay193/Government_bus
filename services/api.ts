@@ -1,4 +1,5 @@
 
+
 import type {
     Schedule,
     User,
@@ -157,6 +158,13 @@ export const api = {
 
     getPassCardForUser: (userId: string): Promise<PassCard | null> =>
         apiFetch(`${API_BASE_URL}/users/${encodeURIComponent(userId)}/pass-card`),
+    
+    cancelBooking: (bookingId: string, seatIds: string[]): Promise<{ message: string }> =>
+        apiFetch(`${API_BASE_URL}/bookings/${bookingId}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ seatIds }),
+        }),
 
     // --- Admin ---
     getSetting: (key: string): Promise<{ key: string; value: string }> =>

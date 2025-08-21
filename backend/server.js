@@ -389,6 +389,7 @@ apiRouter.get('/settings/:key', async (req, res) => {
                 isBookingSystemOnline: 'false',
                 isDiscountSystemEnabled: 'false',
                 isPassCardSystemEnabled: 'false',
+                isCancellationEnabled: 'false',
                 childDiscountPercentage: '40',
                 seniorDiscountPercentage: '50'
             };
@@ -738,7 +739,7 @@ apiRouter.get('/bookings/user/:userId', requireAuth, async (req, res) => {
 
   try {
     const [rows] = await dbPool.query(
-      `SELECT b.id AS bookingId, b.scheduleId, b.fare, b.isFreeTicket, b.govtExamRegistrationNumber, b.bookingDate, b.origin, b.destination, b.discountType, b.passengerDetails, bs.seatId
+      `SELECT b.id AS bookingId, b.scheduleId, b.fare, b.originalFare, b.status, b.isFreeTicket, b.govtExamRegistrationNumber, b.bookingDate, b.origin, b.destination, b.discountType, b.passengerDetails, bs.seatId
        FROM bookings b
        LEFT JOIN bookedseats bs ON b.id = bs.bookingId
        WHERE b.userId = ?
@@ -753,6 +754,8 @@ apiRouter.get('/bookings/user/:userId', requireAuth, async (req, res) => {
           id: row.bookingId,
           scheduleId: row.scheduleId,
           fare: Number(row.fare || 0),
+          originalFare: Number(row.originalFare || 0),
+          status: row.status,
           isFreeTicket: row.isFreeTicket,
           govtExamRegistrationNumber: row.govtExamRegistrationNumber,
           bookingDate: row.bookingDate,
@@ -865,8 +868,8 @@ apiRouter.post('/bookings/free', requireAuth, async (req, res) => {
         
         const bookingId = uuidv4();
         await connection.query(
-          'INSERT INTO bookings (id, userId, scheduleId, fare, origin, destination, isFreeTicket, govtExamRegistrationNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [bookingId, userId, scheduleId, 0, origin, destination, true, registrationNumber]
+          'INSERT INTO bookings (id, userId, scheduleId, fare, originalFare, origin, destination, isFreeTicket, govtExamRegistrationNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [bookingId, userId, scheduleId, 0, 0, origin, destination, true, registrationNumber]
         );
         
         const seatInsertPromises = seatIds.map(seatId => connection.query('INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)', [bookingId, seatId, origin, destination]));
@@ -950,6 +953,7 @@ apiRouter.post("/bookings", requireAuth, async (req, res) => {
                 seatId: seat.seatId,
                 fullName: seat.fullName,
                 type: seat.type,
+                status: 'BOOKED',
             };
 
             if (isDiscountEnabled) {
@@ -985,12 +989,13 @@ apiRouter.post("/bookings", requireAuth, async (req, res) => {
         const bookingId = uuidv4();
         await connection.execute(
             `INSERT INTO bookings 
-                (id, userId, scheduleId, fare, bookingDate, isFreeTicket, origin, destination, discountType, passengerDetails) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                (id, userId, scheduleId, fare, originalFare, bookingDate, isFreeTicket, origin, destination, discountType, passengerDetails) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 bookingId,
                 userId,
                 scheduleId,
+                totalFare,
                 totalFare,
                 new Date(),
                 false,
@@ -1017,6 +1022,110 @@ apiRouter.post("/bookings", requireAuth, async (req, res) => {
             return res.status(409).json({ message: 'One or more selected seats were just booked. Please refresh and try again.' });
         }
         handleDBError(res, err, 'createBooking');
+    } finally {
+        connection.release();
+    }
+});
+
+apiRouter.post('/bookings/:bookingId/cancel', requireAuth, async (req, res) => {
+    const { bookingId } = req.params;
+    const { seatIds } = req.body;
+    const userId = req.user.id;
+
+    if (!Array.isArray(seatIds) || seatIds.length === 0) {
+        return res.status(400).json({ message: 'An array of seat IDs to cancel is required.' });
+    }
+
+    const connection = await dbPool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const [[cancellationSetting]] = await connection.query("SELECT value FROM settings WHERE `key` = 'isCancellationEnabled'");
+        if (!cancellationSetting || cancellationSetting.value !== 'true') {
+            await connection.rollback();
+            return res.status(403).json({ message: 'Ticket cancellation is currently disabled.' });
+        }
+
+        const [[booking]] = await connection.query('SELECT * FROM bookings WHERE id = ? FOR UPDATE', [bookingId]);
+        if (!booking) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Booking not found.' });
+        }
+        if (booking.userId !== userId) {
+            await connection.rollback();
+            return res.status(403).json({ message: 'You are not authorized to cancel this booking.' });
+        }
+        if (booking.status === 'CANCELLED') {
+            await connection.rollback();
+            return res.status(400).json({ message: 'This booking has already been fully cancelled.' });
+        }
+
+        const schedulesMap = await fetchAndAssembleSchedules(connection, booking.scheduleId);
+        const schedule = schedulesMap[booking.scheduleId];
+        if (!schedule) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Could not find schedule details for this booking.' });
+        }
+        
+        const originStop = schedule.fullRouteStops.find(s => s.name.trim().toLowerCase() === booking.origin.trim().toLowerCase());
+        if (!originStop || !originStop.departure) {
+             await connection.rollback();
+             return res.status(500).json({ message: 'Could not determine departure time for this booking.' });
+        }
+        
+        const [hours, minutes] = originStop.departure.split(':');
+        const bookingDateTime = new Date(booking.bookingDate);
+        let departureDateTime = new Date(booking.bookingDate);
+        departureDateTime.setHours(Number(hours), Number(minutes), 0, 0);
+
+        if (departureDateTime < bookingDateTime) {
+            departureDateTime.setDate(departureDateTime.getDate() + 1);
+        }
+        const oneHourBeforeDeparture = new Date(departureDateTime.getTime() - 60 * 60 * 1000);
+
+        if (new Date() >= oneHourBeforeDeparture) {
+            await connection.rollback();
+            return res.status(400).json({ message: 'Cancellation window has closed. Tickets can only be cancelled up to 1 hour before departure.' });
+        }
+
+        let passengerDetails = JSON.parse(booking.passengerDetails || '[]');
+        let fareToRefund = 0;
+        let successfullyCancelledSeats = [];
+
+        for (const seatId of seatIds) {
+            const passengerIndex = passengerDetails.findIndex(p => p.seatId === seatId && p.status !== 'CANCELLED');
+            if (passengerIndex !== -1) {
+                const passenger = passengerDetails[passengerIndex];
+                fareToRefund += passenger.fare;
+                passenger.status = 'CANCELLED';
+                successfullyCancelledSeats.push(seatId);
+            }
+        }
+        
+        if (successfullyCancelledSeats.length === 0) {
+            await connection.rollback();
+            return res.status(400).json({ message: 'Seats selected for cancellation are invalid or already cancelled.' });
+        }
+
+        const remainingFare = booking.fare - fareToRefund;
+        
+        await connection.query('DELETE FROM bookedseats WHERE bookingId = ? AND seatId IN (?)', [bookingId, successfullyCancelledSeats]);
+
+        const totalSeats = passengerDetails.length;
+        const totalCancelledSeats = passengerDetails.filter(p => p.status === 'CANCELLED').length;
+        
+        const newStatus = totalCancelledSeats === totalSeats ? 'CANCELLED' : 'PARTIALLY_CANCELLED';
+
+        await connection.query(
+            'UPDATE bookings SET fare = ?, passengerDetails = ?, status = ? WHERE id = ?',
+            [remainingFare, JSON.stringify(passengerDetails), newStatus, bookingId]
+        );
+
+        await connection.commit();
+        res.status(200).json({ message: `Successfully cancelled ${successfullyCancelledSeats.length} seat(s).` });
+    } catch (error) {
+        await connection.rollback();
+        handleDBError(res, error, 'cancelBooking');
     } finally {
         connection.release();
     }
