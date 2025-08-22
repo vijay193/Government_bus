@@ -759,7 +759,7 @@ apiRouter.get('/bookings/user/:userId', requireAuth, async (req, res) => {
           isFreeTicket: row.isFreeTicket,
           govtExamRegistrationNumber: row.govtExamRegistrationNumber,
           bookingDate: row.bookingDate,
-          journeyDate: row.journeyDate ? new Date(row.journeyDate).toISOString().split('T')[0] : null,
+          journeyDate: row.journeyDate,
           origin: row.origin,
           destination: row.destination,
           discountType: row.discountType,
@@ -783,7 +783,7 @@ apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
     const { origin: userOrigin, destination: userDestination, journeyDate } = req.query;
 
     if (!userOrigin || !userDestination || !journeyDate) {
-        return res.status(400).json({ message: 'Origin, destination, and journey date query parameters are required.' });
+        return res.status(400).json({ message: 'Origin, destination, and journeyDate query parameters are required.' });
     }
 
     try {
@@ -805,7 +805,7 @@ apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
         if (userOriginOrder === undefined || userDestinationOrder === undefined || userOriginOrder >= userDestinationOrder) {
             return res.status(400).json({ message: 'Invalid origin or destination for this route.' });
         }
-        
+
         const [bookedSegments] = await dbPool.query(
             `SELECT bs.seatId, b.origin, b.destination
              FROM bookedseats bs
@@ -836,11 +836,11 @@ apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
 });
 
 apiRouter.post('/bookings/free', requireAuth, async (req, res) => {
-    const { scheduleId, seatIds, origin, destination, registrationNumber, phone, journeyDate } = req.body;
+    const { scheduleId, seatIds, origin, destination, journeyDate, registrationNumber, phone } = req.body;
     const userId = req.user.id;
 
-    if (!scheduleId || !Array.isArray(seatIds) || !origin || !destination || !registrationNumber || !phone || !journeyDate) {
-        return res.status(400).json({ message: 'All booking and verification fields, including journey date, are required.' });
+    if (!scheduleId || !Array.isArray(seatIds) || !origin || !destination || !journeyDate || !registrationNumber || !phone) {
+        return res.status(400).json({ message: 'All booking and verification fields are required.' });
     }
     if (seatIds.length !== 1) {
         return res.status(400).json({ message: 'Free ticket bookings are limited to one seat per user per transaction.' });
@@ -1075,8 +1075,10 @@ apiRouter.post('/bookings/:bookingId/cancel', requireAuth, async (req, res) => {
              return res.status(500).json({ message: 'Could not determine departure time for this booking.' });
         }
         
-        // Combine journey date and departure time for an accurate departure datetime
-        const departureDateTime = new Date(`${new Date(booking.journeyDate).toISOString().split('T')[0]}T${originStop.departure}`);
+        const [hours, minutes] = originStop.departure.split(':');
+        const departureDateTime = new Date(booking.journeyDate);
+        departureDateTime.setHours(Number(hours), Number(minutes), 0, 0);
+
         const oneHourBeforeDeparture = new Date(departureDateTime.getTime() - 60 * 60 * 1000);
 
         if (new Date() >= oneHourBeforeDeparture) {
