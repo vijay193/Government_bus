@@ -1,20 +1,42 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Government Bus Booking System
 
-# Run and deploy your AI Studio app
+This is a **full-stack bus booking system** with a Node.js + Express backend and a React + TypeScript frontend.  
+The backend handles user authentication, bus schedules, bookings, discounts, and analytics, while the frontend provides a user-friendly interface.
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/drive/1-JxGGWwzO891m-d4RUSSr19r_dP5iZrj
+## 🚀 Features
+- User authentication (Password & OTP login)
+- Admin and Sub-Admin role-based access
+- Bus schedule management
+- Seat booking with fare calculation
+- Free ticket booking system (with eligibility verification)
+- Discounts for Child & Senior Citizens
+- Booking cancellation rules
+- Revenue & analytics dashboard
+- Pass card management
+- District-wise bus routes
 
-## Run Locally
+---
 
-**Prerequisites:**  Node.js
+## 🛠️ Tech Stack
+**Frontend:**
+- React + TypeScript
+- Vite bundler
+- TailwindCSS for styling
 
+**Backend:**
+- Node.js + Express
+- MySQL (Database)
+- UUID for unique IDs
+- dotenv for configuration
+- CORS for API access
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+---
+
+## ⚙️ Setup Instructions
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/vijay193/Government_bus.git
+cd Government_bus
