@@ -96,10 +96,14 @@ export interface UserBooking {
 
 export interface BusLocation {
     busId: string;
-    lat: number;
-    lng: number;
     lastUpdated: string;
-    route: { lat: number, lng: number }[];
+    currentStopIndex: number;
+    isAtStop: boolean;
+    routeStops: {
+        name: string;
+        arrival: string | null;
+        departure: string | null;
+    }[];
 }
 
 export interface ParsedStop {

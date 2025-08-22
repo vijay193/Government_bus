@@ -1133,16 +1133,66 @@ apiRouter.post('/bookings/:bookingId/cancel', requireAuth, async (req, res) => {
 
 
 apiRouter.get('/tracking/:busId', async (req, res) => {
-  const schedulesMap = await fetchAndAssembleSchedules(dbPool, req.params.busId);
-  const schedule = schedulesMap[req.params.busId];
-  
-  res.json({
-    busId: req.params.busId,
-    lat: 28.8955,
-    lng: 76.6066,
-    lastUpdated: new Date().toISOString(),
-    route: schedule ? schedule.fullRouteStops.map((_, i) => ({ lat: 28.8 + i*0.1, lng: 76.6 + i*0.1 })) : [] 
-  });
+  try {
+    const schedulesMap = await fetchAndAssembleSchedules(dbPool, req.params.busId);
+    const schedule = schedulesMap[req.params.busId];
+
+    if (!schedule || !schedule.fullRouteStops || schedule.fullRouteStops.length === 0) {
+      return res.status(404).json({ message: 'Tracking information not available for this bus.' });
+    }
+    
+    // Simulation logic to determine current position
+    const now = new Date();
+    let currentStopIndex = -1;
+    let isAtStop = false;
+
+    for (let i = 0; i < schedule.fullRouteStops.length; i++) {
+        const stop = schedule.fullRouteStops[i];
+        const departureTimeStr = stop.departure; // 'HH:mm:ss'
+        const arrivalTimeStr = stop.arrival; // 'HH:mm:ss' or null
+
+        const arrivalTimeToday = new Date();
+        const departureTimeToday = new Date();
+        
+        const timeToUseForArrival = arrivalTimeStr || departureTimeStr;
+        if (timeToUseForArrival) {
+            const [arrH, arrM] = timeToUseForArrival.split(':');
+            arrivalTimeToday.setHours(parseInt(arrH, 10), parseInt(arrM, 10), 0, 0);
+        }
+
+        if (departureTimeStr) {
+            const [depH, depM] = departureTimeStr.split(':');
+            departureTimeToday.setHours(parseInt(depH, 10), parseInt(depM, 10), 0, 0);
+        }
+
+        if (now >= arrivalTimeToday && now <= departureTimeToday) {
+            currentStopIndex = i;
+            isAtStop = true;
+            break;
+        }
+
+        if (now > departureTimeToday) {
+            currentStopIndex = i;
+            isAtStop = false;
+        } else {
+            break; // This is a future stop
+        }
+    }
+
+    res.json({
+      busId: req.params.busId,
+      lastUpdated: new Date().toISOString(),
+      currentStopIndex: currentStopIndex,
+      isAtStop: isAtStop,
+      routeStops: schedule.fullRouteStops.map(stop => ({
+          name: stop.name,
+          arrival: formatTime(stop.arrival),
+          departure: formatTime(stop.departure)
+      }))
+    });
+  } catch (error) {
+    handleDBError(res, error, 'trackBus');
+  }
 });
 
 // --- User Management Routes ---

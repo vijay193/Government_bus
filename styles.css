@@ -1116,9 +1116,6 @@ button {
     text-align: center;
     margin-top: 1.5rem;
 }
-.tracking-page__map-container {
-    margin-top: 1.5rem;
-}
 .tracking-page__map-title {
     font-size: 1.25rem;
     font-weight: 700;
@@ -1127,21 +1124,114 @@ button {
 .tracking-page__map-updated {
     color: var(--color-text-secondary);
     margin-bottom: 1rem;
+    font-size: 0.875rem;
 }
-.tracking-page__map-svg-wrapper {
-    width: 100%;
-    background-color: var(--color-bg-secondary);
+.tracking-page__route-container {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--color-border);
+}
+.tracking-page__current-status {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    background-color: var(--color-primary-light);
+    padding: 0.75rem 1rem;
     border-radius: var(--border-radius-md);
-    padding: 1rem;
-    overflow: hidden;
-    border: 1px solid var(--color-border);
+    margin-bottom: 0.5rem;
 }
-.tracking-page__map-svg {
+.tracking-page__current-status svg {
+    color: var(--color-primary-dark);
+}
+.tracking-page__route-list {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+}
+.tracking-page__route-stop-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+.tracking-page__route-stop {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 0;
     width: 100%;
-    height: auto;
 }
-.tracking-page__bus-marker-ping {
-    animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+.tracking-page__stop-icon {
+    flex-shrink: 0;
+}
+.stop--completed .tracking-page__stop-icon { color: var(--color-success); }
+.stop--current .tracking-page__stop-icon { color: var(--color-primary); }
+.stop--upcoming .tracking-page__stop-icon { color: var(--color-text-secondary); }
+.tracking-page__stop-details {
+    flex-grow: 1;
+}
+.tracking-page__stop-name {
+    font-weight: 600;
+    font-size: 1.125rem;
+}
+.stop--completed .tracking-page__stop-name {
+    color: var(--color-text-secondary);
+    text-decoration: line-through;
+}
+.stop--current .tracking-page__stop-name {
+    color: var(--color-text-primary);
+}
+.stop--upcoming .tracking-page__stop-name {
+    color: var(--color-text-secondary);
+}
+.tracking-page__stop-time {
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+}
+.tracking-page__stop-status-text {
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--border-radius-full);
+}
+.stop--completed .tracking-page__stop-status-text {
+    background-color: var(--color-success-light);
+    color: var(--color-success-text);
+}
+.stop--current .tracking-page__stop-status-text {
+    background-color: var(--color-primary-light);
+    color: var(--color-primary-dark);
+}
+.tracking-page__route-connector {
+    height: 3rem;
+    width: 2px;
+    margin-left: 11px; /* (24px icon width / 2) - (2px line width / 2) */
+    position: relative;
+}
+.connector--completed { background-color: var(--color-success); }
+.connector--upcoming { background-color: var(--color-border-dark); }
+.tracking-page__bus-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: var(--color-bg-body);
+    padding: 0.25rem;
+    border-radius: var(--border-radius-full);
+    color: var(--color-primary);
+    animation: bounce 2s infinite;
+}
+@keyframes bounce {
+  0%, 100% {
+    transform: translate(-50%, -50%) translateY(-25%);
+    animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+  }
+  50% {
+    transform: translate(-50%, -50%) translateY(0);
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
 }
 
 /* --- Booking Page --- */

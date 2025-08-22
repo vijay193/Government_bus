@@ -33,10 +33,3 @@ The backend handles user authentication, bus schedules, bookings, discounts, and
 - CORS for API access
 
 ---
-
-## ⚙️ Setup Instructions
-
-### 1. Clone the repository
-```bash
-git clone https://github.com/vijay193/Government_bus.git
-cd Government_bus

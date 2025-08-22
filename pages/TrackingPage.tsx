@@ -4,49 +4,87 @@ import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
 import { api } from '../services/api';
 import type { BusLocation } from '../types';
-import { MapPin, Search } from 'lucide-react';
+import { MapPin, Search, CheckCircle, CircleDot, Hourglass, BusFront } from 'lucide-react';
 
-const AnimatedMap: React.FC<{ location: BusLocation }> = ({ location }) => {
-    // This is a simplified SVG map to simulate tracking.
-    // A real implementation would use a library like Leaflet or Google Maps.
-    const [progress, setProgress] = useState(0);
+const RouteDisplay: React.FC<{ location: BusLocation }> = ({ location }) => {
+    const { routeStops, currentStopIndex, isAtStop } = location;
 
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setProgress(prev => (prev >= 100 ? 0 : prev + 5));
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [location.busId]);
+    if (!routeStops || routeStops.length === 0) {
+        return <p className="tracking-page__error">Route information is not available for this bus.</p>;
+    }
+
+    const origin = routeStops[0].name;
+    const destination = routeStops[routeStops.length - 1].name;
     
-    // Simplified: assuming a straight line from first to last point
-    const start = location.route[0];
-    const end = location.route[location.route.length-1];
-    
-    const busX = 10 + (280 * progress / 100);
-    const busY = 20 + (160 * progress / 100);
+    let currentStatusText = '';
+    const lastStopIndex = routeStops.length - 1;
 
+    if (currentStopIndex === -1) {
+        currentStatusText = `Bus has not started the journey from ${origin}.`;
+    } else if (currentStopIndex === lastStopIndex && isAtStop) {
+        currentStatusText = `Journey completed. Bus is at the final destination: ${destination}.`;
+    } else if (isAtStop) {
+        currentStatusText = `Bus is currently at ${routeStops[currentStopIndex].name}.`;
+    } else { // on the way
+        const nextStopName = routeStops[currentStopIndex + 1]?.name || destination;
+        currentStatusText = `On the way to ${nextStopName}.`;
+    }
 
     return (
-        <div className="tracking-page__map-container">
-            <h3 className="tracking-page__map-title">Live Location for Bus {location.busId}</h3>
+        <div className="tracking-page__route-container">
+            <h3 className="tracking-page__map-title">Journey: {origin} → {destination}</h3>
+            <div className="tracking-page__current-status">
+                <BusFront size={20} />
+                <span>{currentStatusText}</span>
+            </div>
             <p className="tracking-page__map-updated">Last updated: {new Date(location.lastUpdated).toLocaleTimeString()}</p>
-            <div className="tracking-page__map-svg-wrapper">
-                <svg viewBox="0 0 300 200" className="tracking-page__map-svg">
-                    {/* Route path */}
-                    <path d="M 10 20 L 290 180" stroke="#CBD5E0" strokeWidth="3" strokeDasharray="5,5" />
-                    
-                    {/* Start and end points */}
-                    <circle cx="10" cy="20" r="5" fill="#48BB78" />
-                    <text x="15" y="18" fill="#4A5568" fontSize="10">Origin</text>
-                    <circle cx="290" cy="180" r="5" fill="#F56565" />
-                    <text x="235" y="185" fill="#4A5568" fontSize="10">Destination</text>
+            
+            <div className="tracking-page__route-list">
+                {routeStops.map((stop, index) => {
+                    let status: 'completed' | 'current' | 'upcoming' = 'upcoming';
+                    if (index < currentStopIndex) {
+                        status = 'completed';
+                    } else if (index === currentStopIndex) {
+                        status = 'current';
+                    }
 
-                    {/* Animated bus marker */}
-                    <g transform={`translate(${busX}, ${busY})`}>
-                         <circle cx="0" cy="0" r="8" fill="#4F46E5" stroke="white" strokeWidth="2" />
-                         <circle cx="0" cy="0" r="12" fill="#4F46E5" opacity="0.5" className="tracking-page__bus-marker-ping" />
-                    </g>
-                </svg>
+                    // If journey is completed, the final stop is also marked as completed
+                    if (currentStopIndex === lastStopIndex && index === lastStopIndex) {
+                        status = 'completed';
+                    }
+
+                    const isLastItem = index === routeStops.length - 1;
+
+                    return (
+                        <div key={index} className="tracking-page__route-stop-wrapper">
+                            <div className={`tracking-page__route-stop stop--${status}`}>
+                                <div className="tracking-page__stop-icon">
+                                    {status === 'completed' && <CheckCircle size={24} />}
+                                    {status === 'current' && <CircleDot size={24} />}
+                                    {status === 'upcoming' && <Hourglass size={24} />}
+                                </div>
+                                <div className="tracking-page__stop-details">
+                                    <span className="tracking-page__stop-name">{stop.name}</span>
+                                    <span className="tracking-page__stop-time">
+                                        {stop.arrival && `Arr: ${stop.arrival}`}
+                                        {stop.arrival && stop.departure && ' | '}
+                                        {stop.departure && `Dep: ${stop.departure}`}
+                                    </span>
+                                </div>
+                                {status === 'completed' && <span className="tracking-page__stop-status-text">Completed</span>}
+                                {status === 'current' && isAtStop && <span className="tracking-page__stop-status-text">Current</span>}
+                                {status === 'current' && !isAtStop && <span className="tracking-page__stop-status-text">Departed</span>}
+                            </div>
+                            {!isLastItem && (
+                                <div className={`tracking-page__route-connector connector--${index < currentStopIndex ? 'completed' : 'upcoming'}`}>
+                                    {index === currentStopIndex && !isAtStop && (
+                                        <BusFront className="tracking-page__bus-icon" size={20} />
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
@@ -72,7 +110,8 @@ export const TrackingPage: React.FC = () => {
                 setError('Bus not found or tracking is not available for this route.');
             }
         } catch (err) {
-            setError('Failed to fetch tracking data. Please try again.');
+            const message = err instanceof Error ? err.message : 'Failed to fetch tracking data. Please try again.';
+            setError(message);
         } finally {
             setIsLoading(false);
         }
@@ -93,7 +132,7 @@ export const TrackingPage: React.FC = () => {
 
                 {error && <p className="tracking-page__error">{error}</p>}
                 
-                {location && <AnimatedMap location={location} />}
+                {location && <RouteDisplay location={location} />}
             </Card>
         </div>
     );
