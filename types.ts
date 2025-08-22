@@ -131,28 +131,49 @@ export interface ParsedBeneficiary {
 }
 
 // --- Revenue Analytics Types ---
-export interface AnalyticsDataPoint {
+export interface RevenueByCategory {
   type: 'NORMAL' | 'CHILD' | 'SENIOR';
-  tickets: number;
-  revenue: number;
+  bookedTickets: number;
+  cancelledTickets: number;
+  grossRevenue: number;
+  refundedRevenue: number;
+  netRevenue: number;
 }
 
-export interface DistrictAnalyticsDataPoint extends AnalyticsDataPoint {
+interface DetailedMetrics {
+    bookedNormalRevenue: number;
+    bookedChildRevenue: number;
+    bookedSeniorRevenue: number;
+    cancelledNormalRevenue: number;
+    cancelledChildRevenue: number;
+    cancelledSeniorRevenue: number;
+    bookedNormalTickets: number;
+    bookedChildTickets: number;
+    bookedSeniorTickets: number;
+    cancelledNormalTickets: number;
+    cancelledChildTickets: number;
+    cancelledSeniorTickets: number;
+}
+
+export interface DetailedDistrictAnalytics extends DetailedMetrics {
     district: string;
 }
 
-export interface RouteAnalyticsDataPoint extends AnalyticsDataPoint {
+export interface DetailedRouteAnalytics extends DetailedMetrics {
     route: string;
 }
 
 export interface RevenueSummary {
-    totalRevenue: number;
-    totalTickets: number;
+    netRevenue: number;
+    grossRevenue: number;
+    refundedRevenue: number;
+    bookedTickets: number;
+    cancelledTickets: number;
 }
 
 export interface RevenueAnalyticsData {
     summary: RevenueSummary;
-    byCategory: AnalyticsDataPoint[];
-    byDistrict: DistrictAnalyticsDataPoint[];
-    byRoute: RouteAnalyticsDataPoint[];
+    byCategory: RevenueByCategory[];
+    byDistrict: DetailedDistrictAnalytics[];
+    byRoute: DetailedRouteAnalytics[];
 }

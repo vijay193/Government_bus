@@ -1590,6 +1590,7 @@ apiRouter.delete('/users/:id', requireAdmin, async (req, res) => {
         connection.release();
     }
 });
+
 apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => {
   const user = req.user;
   let assignedDistricts = [];
@@ -1598,112 +1599,79 @@ apiRouter.get('/analytics/revenue', requireSubAdminOrAdmin, async (req, res) => 
     if (user.role === 'SUB_ADMIN') {
       assignedDistricts = user.assignedDistricts || [];
       if (assignedDistricts.length === 0) {
-        return res.json({ 
-          summary: { totalRevenue: 0, totalTickets: 0 }, 
-          byDistrict: [], 
-          byRoute: [], 
-          byCategory: [] 
+        return res.json({
+          summary: { netRevenue: 0, grossRevenue: 0, refundedRevenue: 0, bookedTickets: 0, cancelledTickets: 0 },
+          byCategory: [], byDistrict: [], byRoute: [],
         });
       }
     }
+    
+    const subAdminFilter = assignedDistricts.length > 0 ? 'AND b.origin IN (?)' : '';
+    const queryParams = assignedDistricts.length > 0 ? [assignedDistricts] : [];
 
-    const subAdminFilter = assignedDistricts.length ? 'AND b.origin IN (?)' : '';
-    const queryParams = assignedDistricts.length ? [assignedDistricts] : [];
-
-    // --- Category-wise ---
-    const [categoryRows] = await dbPool.query(`
-      SELECT 
-        p.type,
-        COUNT(*) AS tickets,
-        SUM(p.fare) AS revenue
+    const baseQuery = `
       FROM bookings b
-      JOIN JSON_TABLE(b.passengerDetails, '$[*]' 
-        COLUMNS (
+      JOIN JSON_TABLE(
+        b.passengerDetails, 
+        '$[*]' COLUMNS (
           type VARCHAR(20) PATH '$.type',
-          fare DECIMAL(10,2) PATH '$.fare'
+          fare DECIMAL(10,2) PATH '$.fare',
+          status VARCHAR(20) PATH '$.status'
         )
       ) AS p
       WHERE b.isFreeTicket = 0 
         AND b.passengerDetails IS NOT NULL 
         AND JSON_VALID(b.passengerDetails)
-      ${subAdminFilter}
-      GROUP BY p.type
-    `, queryParams);
+        ${subAdminFilter}
+    `;
+    
+    const categoryQuery = `
+        SELECT p.type,
+            COALESCE(SUM(CASE WHEN p.status IS NULL OR p.status = 'BOOKED' THEN p.fare ELSE 0 END), 0) AS grossRevenue,
+            COALESCE(SUM(CASE WHEN p.status = 'CANCELLED' THEN p.fare ELSE 0 END), 0) AS refundedRevenue,
+            COUNT(CASE WHEN p.status IS NULL OR p.status = 'BOOKED' THEN 1 END) AS bookedTickets,
+            COUNT(CASE WHEN p.status = 'CANCELLED' THEN 1 END) AS cancelledTickets
+        ${baseQuery}
+        GROUP BY p.type
+    `;
+    
+    const pivotedFields = `
+        -- BOOKED REVENUE
+        COALESCE(SUM(CASE WHEN p.type = 'NORMAL' AND (p.status = 'BOOKED' OR p.status IS NULL) THEN p.fare ELSE 0 END), 0) as bookedNormalRevenue,
+        COALESCE(SUM(CASE WHEN p.type = 'CHILD' AND (p.status = 'BOOKED' OR p.status IS NULL) THEN p.fare ELSE 0 END), 0) as bookedChildRevenue,
+        COALESCE(SUM(CASE WHEN p.type = 'SENIOR' AND (p.status = 'BOOKED' OR p.status IS NULL) THEN p.fare ELSE 0 END), 0) as bookedSeniorRevenue,
+        -- CANCELLED REVENUE (REFUNDS)
+        COALESCE(SUM(CASE WHEN p.type = 'NORMAL' AND p.status = 'CANCELLED' THEN p.fare ELSE 0 END), 0) as cancelledNormalRevenue,
+        COALESCE(SUM(CASE WHEN p.type = 'CHILD' AND p.status = 'CANCELLED' THEN p.fare ELSE 0 END), 0) as cancelledChildRevenue,
+        COALESCE(SUM(CASE WHEN p.type = 'SENIOR' AND p.status = 'CANCELLED' THEN p.fare ELSE 0 END), 0) as cancelledSeniorRevenue,
+        -- BOOKED TICKETS
+        COUNT(CASE WHEN p.type = 'NORMAL' AND (p.status = 'BOOKED' OR p.status IS NULL) THEN 1 END) as bookedNormalTickets,
+        COUNT(CASE WHEN p.type = 'CHILD' AND (p.status = 'BOOKED' OR p.status IS NULL) THEN 1 END) as bookedChildTickets,
+        COUNT(CASE WHEN p.type = 'SENIOR' AND (p.status = 'BOOKED' OR p.status IS NULL) THEN 1 END) as bookedSeniorTickets,
+        -- CANCELLED TICKETS
+        COUNT(CASE WHEN p.type = 'NORMAL' AND p.status = 'CANCELLED' THEN 1 END) as cancelledNormalTickets,
+        COUNT(CASE WHEN p.type = 'CHILD' AND p.status = 'CANCELLED' THEN 1 END) as cancelledChildTickets,
+        COUNT(CASE WHEN p.type = 'SENIOR' AND p.status = 'CANCELLED' THEN 1 END) as cancelledSeniorTickets
+    `;
 
-    // --- District-wise ---
-    const [districtRows] = await dbPool.query(`
-      SELECT 
-        b.origin AS district,
-        p.type,
-        COUNT(*) AS tickets,
-        SUM(p.fare) AS revenue
-      FROM bookings b
-      JOIN JSON_TABLE(b.passengerDetails, '$[*]' 
-        COLUMNS (
-          type VARCHAR(20) PATH '$.type',
-          fare DECIMAL(10,2) PATH '$.fare'
-        )
-      ) AS p
-      WHERE b.isFreeTicket = 0 
-        AND b.passengerDetails IS NOT NULL 
-        AND JSON_VALID(b.passengerDetails)
-      ${subAdminFilter}
-      GROUP BY b.origin, p.type
-      ORDER BY revenue DESC
-    `, queryParams);
+    const districtQuery = `SELECT b.origin as district, ${pivotedFields} ${baseQuery} GROUP BY b.origin`;
+    const routeQuery = `SELECT CONCAT(b.origin, ' -> ', b.destination) AS route, ${pivotedFields} ${baseQuery} GROUP BY route`;
 
-    // --- Route-wise ---
-    const [routeRows] = await dbPool.query(`
-      SELECT 
-        CONCAT(b.origin, ' -> ', b.destination) AS route,
-        p.type,
-        COUNT(*) AS tickets,
-        SUM(p.fare) AS revenue
-      FROM bookings b
-      JOIN JSON_TABLE(b.passengerDetails, '$[*]' 
-        COLUMNS (
-          type VARCHAR(20) PATH '$.type',
-          fare DECIMAL(10,2) PATH '$.fare'
-        )
-      ) AS p
-      WHERE b.isFreeTicket = 0 
-        AND b.passengerDetails IS NOT NULL 
-        AND JSON_VALID(b.passengerDetails)
-      ${subAdminFilter}
-      GROUP BY route, p.type
-      ORDER BY revenue DESC
-    `, queryParams);
+    const [categoryRows] = await dbPool.query(categoryQuery, queryParams);
+    const [districtRows] = await dbPool.query(districtQuery, queryParams);
+    const [routeRows] = await dbPool.query(routeQuery, queryParams);
 
-    // --- Normalize numbers ---
-    const cleanCategory = categoryRows.map(r => ({
-      type: r.type,
-      tickets: Number(r.tickets) || 0,
-      revenue: Number(r.revenue) || 0,
-    }));
+    const byCategory = categoryRows.map(r => ({ ...r, grossRevenue: Number(r.grossRevenue), refundedRevenue: Number(r.refundedRevenue), netRevenue: (Number(r.grossRevenue) - Number(r.refundedRevenue)) }));
 
-    const cleanDistrict = districtRows.map(r => ({
-      district: r.district,
-      type: r.type,
-      tickets: Number(r.tickets) || 0,
-      revenue: Number(r.revenue) || 0,
-    }));
+    const summary = byCategory.reduce((acc, curr) => ({
+      grossRevenue: acc.grossRevenue + Number(curr.grossRevenue),
+      refundedRevenue: acc.refundedRevenue + Number(curr.refundedRevenue),
+      bookedTickets: acc.bookedTickets + Number(curr.bookedTickets),
+      cancelledTickets: acc.cancelledTickets + Number(curr.cancelledTickets),
+      netRevenue: acc.netRevenue + Number(curr.netRevenue),
+    }), { netRevenue: 0, grossRevenue: 0, refundedRevenue: 0, bookedTickets: 0, cancelledTickets: 0 });
 
-    const cleanRoute = routeRows.map(r => ({
-      route: r.route,
-      type: r.type,
-      tickets: Number(r.tickets) || 0,
-      revenue: Number(r.revenue) || 0,
-    }));
-
-    res.json({
-      summary: {
-        totalRevenue: cleanCategory.reduce((a, r) => a + r.revenue, 0),
-        totalTickets: cleanCategory.reduce((a, r) => a + r.tickets, 0),
-      },
-      byCategory: cleanCategory,
-      byDistrict: cleanDistrict,
-      byRoute: cleanRoute,
-    });
+    res.json({ summary, byCategory, byDistrict: districtRows, byRoute: routeRows });
 
   } catch (err) {
     handleDBError(res, err, 'getRevenueAnalyticsDetailed');

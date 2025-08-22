@@ -1816,153 +1816,36 @@ button {
 /* Revenue Analytics */
 .analytics-summary-grid {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     gap: 1.5rem;
 }
-@media (min-width: 640px) {
-    .analytics-summary-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-}
-@media (min-width: 1280px) {
-    .analytics-summary-grid {
-        grid-template-columns: repeat(5, 1fr);
-    }
-}
-.analytics-summary-card {
-    flex: 1;
-}
-.analytics-summary-card__content {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-}
-.analytics-summary-card__icon-wrapper {
-    padding: 0.75rem;
-    background-color: var(--color-primary-light);
-    border-radius: var(--border-radius-full);
-}
-.analytics-summary-card__icon {
-    color: var(--color-primary);
-    font-size: 1.5rem; /* Set explicit size for CSS icons */
-}
-.analytics-summary-card__title {
-    color: var(--color-text-secondary);
-    font-size: 0.875rem;
-    font-weight: 500;
-}
-.analytics-summary-card__value {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--color-text-primary);
-}
-.analytics-summary-card__value small {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--color-text-secondary);
-    margin-left: 0.25rem;
-}
-.analytics-table-wrapper {
-    overflow-x: auto;
-    max-height: 24rem;
-}
-.analytics-grid-layout {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 2rem;
-    margin-top: 2rem;
-}
-@media (min-width: 1024px) {
-    .analytics-grid-layout {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        align-items: start;
-    }
-}
-.analytics-card-section-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--color-text-primary);
-    margin: 2rem 0 1rem 0;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--color-border);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-/* Enhanced Analytics Table Styles */
-.analytics-table--detailed {
-    font-size: 0.875rem;
-}
-.analytics-table--detailed thead th {
-    background-color: var(--color-bg-secondary);
-    border-bottom: 2px solid var(--color-border-dark);
-    padding: 0.75rem 1rem;
-    font-weight: 600;
-    color: var(--color-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
-    vertical-align: middle;
-}
-.analytics-table--detailed thead th[colspan] {
-    border-bottom: 1px solid var(--color-border-dark);
-    font-size: 1rem;
-    color: var(--color-text-primary);
-}
-.analytics-table--detailed thead tr:last-child th {
-    font-size: 0.8em;
-    font-weight: 600;
-    color: var(--color-text-primary);
-}
-.analytics-table--detailed tbody tr:nth-child(even) {
-    background-color: var(--color-bg-secondary);
-}
-.analytics-table--detailed tbody tr:hover {
-    background-color: var(--color-primary-light);
-}
-.analytics-table--detailed td {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--color-border);
-    vertical-align: middle;
-}
-.analytics-table--detailed td:first-child {
-    font-weight: 600;
-    color: var(--color-text-primary);
-}
-.analytics-table--detailed th:first-child,
-.analytics-table--detailed td:first-child {
-    border-right: 1px solid var(--color-border-dark);
-}
-.analytics-table--detailed th:nth-of-type(2), /* after Bookings */
-.analytics-table--detailed td:nth-child(5) {
-     border-right: 1px solid var(--color-border-dark);
-}
-
-/* Enhanced Data bar styles */
-.data-bar-cell {
-    position: relative;
-    text-align: right;
-    white-space: nowrap;
-    min-width: 8rem;
-}
-.data-bar {
-    position: absolute;
-    left: 0;
-    top: 0;
-    height: 100%;
-    background-image: linear-gradient(to right, var(--color-primary-light), var(--color-primary-focus));
-    border-right: 2px solid var(--color-primary);
-    opacity: 0.8;
-    z-index: 0;
-    transition: width 0.4s ease-out;
-}
-.data-bar-label {
-    position: relative;
-    z-index: 1;
-    font-weight: 700;
-    color: var(--color-primary-dark);
-}
-
+.analytics-summary-card { padding: 1rem; }
+.analytics-summary-card__content { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+.analytics-summary-card__icon-wrapper { padding: 0.75rem; border-radius: var(--border-radius-full); display: flex; align-items: center; justify-content: center; color: var(--color-text-inverted); }
+.summary-card--gross .analytics-summary-card__icon-wrapper { background-color: var(--color-success); }
+.summary-card--refunded .analytics-summary-card__icon-wrapper { background-color: var(--color-danger); }
+.summary-card--net .analytics-summary-card__icon-wrapper { background-color: var(--color-primary); }
+.summary-card--booked .analytics-summary-card__icon-wrapper { background-color: var(--color-info); }
+.summary-card--cancelled .analytics-summary-card__icon-wrapper { background-color: var(--color-warning); }
+.analytics-summary-card__title { font-size: 0.875rem; font-weight: 500; color: var(--color-text-secondary); }
+.analytics-summary-card__value { font-size: 1.75rem; font-weight: 700; color: var(--color-text-primary); }
+.analytics-grid-layout { display: grid; grid-template-columns: 1fr; gap: 2rem; }
+@media (min-width: 1024px) { .analytics-grid-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: flex-start; } }
+.analytics-chart-container { display: flex; flex-direction: column; gap: 1rem; }
+.analytics-card-section-title { font-size: 1.25rem; font-weight: 600; color: var(--color-text-primary); margin-top: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.analytics-table-container { display: flex; flex-direction: column; gap: 0.5rem; }
+.analytics-table-title { font-size: 1.125rem; font-weight: 600; color: var(--color-text-primary); }
+.analytics-table--detailed { font-size: 0.875rem; text-align: right; }
+.analytics-table--detailed thead th { background-color: var(--color-bg-secondary); border-bottom: 2px solid var(--color-border-dark); padding: 0.75rem 1rem; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.025em; vertical-align: middle; text-align: center; }
+.analytics-table--detailed thead th[rowspan] { border-right: 1px solid var(--color-border-dark); }
+.analytics-table--detailed thead th[colspan] { border-bottom: 1px solid var(--color-border-dark); border-right: 1px solid var(--color-border-dark); font-size: 1rem; color: var(--color-text-primary); }
+.analytics-table--detailed thead th[colspan]:last-child { border-right: none; }
+.analytics-table--detailed tbody tr:nth-child(even) { background-color: var(--color-bg-secondary); }
+.analytics-table--detailed tbody tr:hover { background-color: var(--color-primary-light); }
+.analytics-table--detailed td { padding: 0.5rem 1rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
+.analytics-table--detailed .sticky-col { position: sticky; left: 0; background-color: inherit; text-align: left; font-weight: 600; color: var(--color-text-primary); border-right: 1px solid var(--color-border-dark); }
+.analytics-table--detailed .font-bold { font-weight: 700; }
+.analytics-table--detailed .text-red-600 { color: #dc2626; }
 
 /* Upload Schedules */
 .upload-schedules__tabs {

@@ -1,53 +1,135 @@
 
 
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../services/api';
-import type { RevenueAnalyticsData, AnalyticsDataPoint } from '../../types';
+import type { RevenueAnalyticsData, DetailedDistrictAnalytics, DetailedRouteAnalytics } from '../../types';
 import { Card } from '../../components/common/Card';
 import { UserRole } from '../../types';
+import { TrendingUp, IndianRupee, Ticket, AlertCircle, TrendingDown, Users, Route, MapPin, XCircle } from 'lucide-react';
 
-const COLORS = ['#4f46e5', '#16a34a', '#f59e0b']; // NORMAL, CHILD, SENIOR
+const COLORS = {
+    'NORMAL': '#4f46e5',
+    'CHILD': '#16a34a',
+    'SENIOR': '#f59e0b',
+    'REFUNDED': '#ef4444',
+};
 const CATEGORY_ORDER: { [key: string]: number } = { 'NORMAL': 0, 'CHILD': 1, 'SENIOR': 2 };
 
-const formatCurrency = (value: number | null | undefined) => {
-    if (value === null || typeof value === 'undefined' || isNaN(value)) {
-        return '₹0';
-    }
-    return `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-};
+const formatCurrency = (value: number) => `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+const formatNumber = (value: number) => value.toLocaleString('en-IN');
 
-const AnalyticsSummaryCard: React.FC<{ title: string; value: React.ReactNode; icon: React.ReactNode }> = ({ title, value, icon }) => (
-    <Card className="analytics-summary-card">
+
+const AnalyticsSummaryCard: React.FC<{ title: string; value: React.ReactNode; icon: React.ReactNode, className?: string }> = ({ title, value, icon, className }) => (
+    <Card className={`analytics-summary-card ${className || ''}`}>
+        <div className={`analytics-summary-card__icon-wrapper ${className || ''}`}>
+            {icon}
+        </div>
         <div className="analytics-summary-card__content">
-            <div className="analytics-summary-card__icon-wrapper">
-                {icon}
-            </div>
-            <div>
-                <p className="analytics-summary-card__title">{title}</p>
-                <p className="analytics-summary-card__value">{value}</p>
-            </div>
+            <p className="analytics-summary-card__title">{title}</p>
+            <p className="analytics-summary-card__value">{value}</p>
         </div>
     </Card>
 );
 
-const DataBarCell: React.FC<{ value: number; maxValue: number; formatter: (val: number) => string | number }> = ({ value, maxValue, formatter }) => {
-    const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0;
-    return (
-        <td className="data-bar-cell">
-            <div className="data-bar" style={{ width: `${percentage}%` }} />
-            <span className="data-bar-label">{formatter(value)}</span>
-        </td>
-    );
-};
+const DetailedAnalyticsTable: React.FC<{ 
+    data: (DetailedDistrictAnalytics | DetailedRouteAnalytics)[]; 
+    type: 'district' | 'route' 
+}> = ({ data, type }) => {
+    
+    if (data.length === 0) {
+        return <p className="text-center p-4">No data available for this view.</p>
+    }
 
+    const keyField = type === 'district' ? 'district' : 'route';
+
+    const revenueData = data.map(item => ({
+        key: (item as any)[keyField],
+        ...item,
+        bookedTotal: item.bookedNormalRevenue + item.bookedChildRevenue + item.bookedSeniorRevenue,
+        cancelledTotal: item.cancelledNormalRevenue + item.cancelledChildRevenue + item.cancelledSeniorRevenue,
+        netNormal: item.bookedNormalRevenue - item.cancelledNormalRevenue,
+        netChild: item.bookedChildRevenue - item.cancelledChildRevenue,
+        netSenior: item.bookedSeniorRevenue - item.cancelledSeniorRevenue,
+        netTotal: (item.bookedNormalRevenue + item.bookedChildRevenue + item.bookedSeniorRevenue) - (item.cancelledNormalRevenue + item.cancelledChildRevenue + item.cancelledSeniorRevenue),
+    }));
+
+    const ticketData = data.map(item => ({
+        key: (item as any)[keyField],
+        ...item,
+        bookedTotal: item.bookedNormalTickets + item.bookedChildTickets + item.bookedSeniorTickets,
+        cancelledTotal: item.cancelledNormalTickets + item.cancelledChildTickets + item.cancelledSeniorTickets,
+    }));
+
+    return (
+        <div className="space-y-6">
+            <div className="analytics-table-container">
+                <h3 className="analytics-table-title">Revenue Breakdown</h3>
+                <div className="user-management__table-wrapper">
+                    <table className="user-management__table analytics-table--detailed">
+                        <thead>
+                            <tr>
+                                <th rowSpan={2} className="sticky-col">{type === 'district' ? 'District' : 'Route'}</th>
+                                <th colSpan={4}>Booked Revenue</th>
+                                <th colSpan={4}>Cancelled Revenue (Refunds)</th>
+                                <th colSpan={4}>Net Revenue</th>
+                            </tr>
+                            <tr>
+                                <th>Normal</th><th>Child</th><th>Senior</th><th>Total</th>
+                                <th>Normal</th><th>Child</th><th>Senior</th><th>Total</th>
+                                <th>Normal</th><th>Child</th><th>Senior</th><th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {revenueData.map(d => (
+                                <tr key={d.key}>
+                                    <td className="sticky-col">{d.key}</td>
+                                    <td>{formatCurrency(d.bookedNormalRevenue)}</td><td>{formatCurrency(d.bookedChildRevenue)}</td><td>{formatCurrency(d.bookedSeniorRevenue)}</td><td className="font-bold">{formatCurrency(d.bookedTotal)}</td>
+                                    <td className="text-red-600">{formatCurrency(d.cancelledNormalRevenue)}</td><td className="text-red-600">{formatCurrency(d.cancelledChildRevenue)}</td><td className="text-red-600">{formatCurrency(d.cancelledSeniorRevenue)}</td><td className="font-bold text-red-600">{formatCurrency(d.cancelledTotal)}</td>
+                                    <td>{formatCurrency(d.netNormal)}</td><td>{formatCurrency(d.netChild)}</td><td>{formatCurrency(d.netSenior)}</td><td className="font-bold">{formatCurrency(d.netTotal)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div className="analytics-table-container">
+                <h3 className="analytics-table-title">Ticket Count Breakdown</h3>
+                 <div className="user-management__table-wrapper">
+                    <table className="user-management__table analytics-table--detailed">
+                       <thead>
+                            <tr>
+                                <th rowSpan={2} className="sticky-col">{type === 'district' ? 'District' : 'Route'}</th>
+                                <th colSpan={4}>Booked Tickets</th>
+                                <th colSpan={4}>Cancelled Tickets</th>
+                            </tr>
+                            <tr>
+                                <th>Normal</th><th>Child</th><th>Senior</th><th>Total</th>
+                                <th>Normal</th><th>Child</th><th>Senior</th><th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {ticketData.map(d => (
+                                <tr key={d.key}>
+                                    <td className="sticky-col">{d.key}</td>
+                                    <td>{formatNumber(d.bookedNormalTickets)}</td><td>{formatNumber(d.bookedChildTickets)}</td><td>{formatNumber(d.bookedSeniorTickets)}</td><td className="font-bold">{formatNumber(d.bookedTotal)}</td>
+                                    <td className="text-red-600">{formatNumber(d.cancelledNormalTickets)}</td><td className="text-red-600">{formatNumber(d.cancelledChildTickets)}</td><td className="text-red-600">{formatNumber(d.cancelledSeniorTickets)}</td><td className="font-bold text-red-600">{formatNumber(d.cancelledTotal)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export const RevenueAnalyticsPage: React.FC = () => {
     const [data, setData] = useState<RevenueAnalyticsData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'district' | 'route'>('district');
     const { user } = useAuth();
 
     useEffect(() => {
@@ -67,297 +149,129 @@ export const RevenueAnalyticsPage: React.FC = () => {
         fetchData();
     }, [user]);
 
-    // Memoized data aggregation for charts and tables
-    const districtChartData = useMemo(() => {
-        if (!data?.byDistrict) return [];
-        const districtMap = new Map<string, { district: string; normal: number; child: number; senior: number }>();
-        data.byDistrict.forEach((item) => {
-            if (!districtMap.has(item.district)) {
-                districtMap.set(item.district, { district: item.district, normal: 0, child: 0, senior: 0 });
-            }
-            const districtData = districtMap.get(item.district)!;
-            switch (item.type) {
-                case 'NORMAL': districtData.normal += item.revenue; break;
-                case 'CHILD': districtData.child += item.revenue; break;
-                case 'SENIOR': districtData.senior += item.revenue; break;
-            }
-        });
-        return Array.from(districtMap.values());
-    }, [data?.byDistrict]);
+    const chartData = useMemo(() => {
+        if (!data) return null;
+        
+        const bookedRevenueByCategory = data.byCategory
+            .filter(c => c.grossRevenue > 0)
+            .map(c => ({ name: c.type, value: c.grossRevenue }))
+            .sort((a, b) => CATEGORY_ORDER[a.name] - CATEGORY_ORDER[b.name]);
 
-    const routeData = useMemo(() => {
-        if (!data?.byRoute) return { routes: [], maxRevenue: 0, maxTickets: 0 };
-        const routeMap = new Map<string, {
-            route: string;
-            normalTickets: number; childTickets: number; seniorTickets: number; totalTickets: number;
-            normalRevenue: number; childRevenue: number; seniorRevenue: number; totalRevenue: number;
-        }>();
+        const refundedRevenueByCategory = data.byCategory
+            .filter(c => c.refundedRevenue > 0)
+            .map(c => ({ name: c.type, value: c.refundedRevenue }))
+            .sort((a, b) => CATEGORY_ORDER[a.name] - CATEGORY_ORDER[b.name]);
+        
+        const top5BookedDistricts = [...data.byDistrict]
+            .map(d => ({ name: d.district, Normal: d.bookedNormalRevenue, Child: d.bookedChildRevenue, Senior: d.bookedSeniorRevenue, Total: d.bookedNormalRevenue + d.bookedChildRevenue + d.bookedSeniorRevenue }))
+            .sort((a, b) => b.Total - a.Total)
+            .slice(0, 5);
 
-        data.byRoute.forEach((item) => {
-            if (!routeMap.has(item.route)) {
-                routeMap.set(item.route, {
-                    route: item.route,
-                    normalTickets: 0, childTickets: 0, seniorTickets: 0, totalTickets: 0,
-                    normalRevenue: 0, childRevenue: 0, seniorRevenue: 0, totalRevenue: 0,
-                });
-            }
-            const routeData = routeMap.get(item.route)!;
-            
-            routeData.totalTickets += item.tickets;
-            routeData.totalRevenue += item.revenue;
+        const top5RefundedDistricts = [...data.byDistrict]
+            .map(d => ({ name: d.district, Normal: d.cancelledNormalRevenue, Child: d.cancelledChildRevenue, Senior: d.cancelledSeniorRevenue, Total: d.cancelledNormalRevenue + d.cancelledChildRevenue + d.cancelledSeniorRevenue }))
+            .filter(d => d.Total > 0)
+            .sort((a, b) => b.Total - a.Total)
+            .slice(0, 5);
 
-            switch (item.type) {
-                case 'NORMAL':
-                    routeData.normalTickets += item.tickets;
-                    routeData.normalRevenue += item.revenue;
-                    break;
-                case 'CHILD':
-                    routeData.childTickets += item.tickets;
-                    routeData.childRevenue += item.revenue;
-                    break;
-                case 'SENIOR':
-                    routeData.seniorTickets += item.tickets;
-                    routeData.seniorRevenue += item.revenue;
-                    break;
-            }
-        });
-
-        const routes = Array.from(routeMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
-        const maxRevenue = Math.max(...routes.map(r => r.totalRevenue), 0);
-        const maxTickets = Math.max(...routes.map(r => r.totalTickets), 0);
-        return { routes, maxRevenue, maxTickets };
-    }, [data?.byRoute]);
-
-    const districtData = useMemo(() => {
-        if (!data?.byDistrict) return { districts: [], maxRevenue: 0, maxTickets: 0 };
-        const districtMap = new Map<string, {
-            district: string;
-            normalTickets: number; childTickets: number; seniorTickets: number; totalTickets: number;
-            normalRevenue: number; childRevenue: number; seniorRevenue: number; totalRevenue: number;
-        }>();
-    
-        data.byDistrict.forEach((item) => {
-            if (!districtMap.has(item.district)) {
-                districtMap.set(item.district, {
-                    district: item.district,
-                    normalTickets: 0, childTickets: 0, seniorTickets: 0, totalTickets: 0,
-                    normalRevenue: 0, childRevenue: 0, seniorRevenue: 0, totalRevenue: 0,
-                });
-            }
-            const districtData = districtMap.get(item.district)!;
-            
-            districtData.totalTickets += item.tickets;
-            districtData.totalRevenue += item.revenue;
-    
-            switch (item.type) {
-                case 'NORMAL':
-                    districtData.normalTickets += item.tickets;
-                    districtData.normalRevenue += item.revenue;
-                    break;
-                case 'CHILD':
-                    districtData.childTickets += item.tickets;
-                    districtData.childRevenue += item.revenue;
-                    break;
-                case 'SENIOR':
-                    districtData.seniorTickets += item.tickets;
-                    districtData.seniorRevenue += item.revenue;
-                    break;
-            }
-        });
-    
-        const districts = Array.from(districtMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
-        const maxRevenue = Math.max(...districts.map(d => d.totalRevenue), 0);
-        const maxTickets = Math.max(...districts.map(d => d.totalTickets), 0);
-        return { districts, maxRevenue, maxTickets };
-    }, [data?.byDistrict]);
+        return { bookedRevenueByCategory, refundedRevenueByCategory, top5BookedDistricts, top5RefundedDistricts };
+    }, [data]);
 
 
-    if (isLoading) {
-        return <div className="home-page__loader"><div className="home-page__spinner"></div></div>;
-    }
+    if (isLoading) return <div className="home-page__loader"><div className="home-page__spinner"></div></div>;
+    if (error) return <Card><div className="auth-form__error"><AlertCircle /><p>{error}</p></div></Card>;
+    if (!data || !data.summary || !chartData) return <Card><p className="text-center">No analytics data available.</p></Card>;
 
-    if (error) {
-        return (
-            <Card>
-                <div className="auth-form__error">
-                    <i className="icon icon-alert-circle" style={{ fontSize: '24px' }}></i>
-                    <p>{error}</p>
-                </div>
-            </Card>
-        );
-    }
-
-    if (!data || !data.summary) {
-        return <Card><p className="text-center">No analytics data available.</p></Card>;
-    }
-
-    const { summary, byCategory = [] } = data;
-
-    const categoryChartData = byCategory.map((c: AnalyticsDataPoint) => ({
-        name: c.type,
-        value: c.revenue,
-    }));
+    const { summary, byDistrict = [], byRoute = [] } = data;
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-6">
             <Card>
-                <h1 className="admin-page-header__title"><i className="icon icon-trending-up"></i> Revenue Analytics</h1>
+                <h1 className="admin-page-header__title"><TrendingUp /> Revenue Analytics</h1>
                 <p className="admin-page-header__subtitle">
                     {user?.role === UserRole.ADMIN ? 'Global overview of all revenue streams.' : 'Performance overview for your assigned districts.'}
                 </p>
             </Card>
 
-            {/* Summary */}
             <div className="analytics-summary-grid">
-                <AnalyticsSummaryCard title="Total Revenue" value={formatCurrency(summary.totalRevenue)} icon={<i className="icon icon-rupee analytics-summary-card__icon"></i>} />
-                <AnalyticsSummaryCard title="Total Tickets" value={<>{(summary.totalTickets || 0).toLocaleString('en-IN')} <small>tickets sold</small></>} icon={<i className="icon icon-ticket analytics-summary-card__icon"></i>} />
-                {byCategory.sort((a, b) => (CATEGORY_ORDER[a.type] || 99) - (CATEGORY_ORDER[b.type] || 99)).map((c: AnalyticsDataPoint) => (
-                    <AnalyticsSummaryCard
-                        key={c.type}
-                        title={`${c.type} Revenue`}
-                        value={<>{formatCurrency(c.revenue)} <small>({c.tickets} tickets)</small></>}
-                        icon={<i className="icon icon-users analytics-summary-card__icon" style={{ color: COLORS[CATEGORY_ORDER[c.type] || 0] }}></i>}
-                    />
-                ))}
+                <AnalyticsSummaryCard title="Total Booked Revenue" value={formatCurrency(summary.grossRevenue)} icon={<IndianRupee />} className="summary-card--gross"/>
+                <AnalyticsSummaryCard title="Total Cancelled (Refunds)" value={formatCurrency(summary.refundedRevenue)} icon={<TrendingDown />} className="summary-card--refunded"/>
+                <AnalyticsSummaryCard title="Net Revenue" value={formatCurrency(summary.netRevenue)} icon={<IndianRupee />} className="summary-card--net"/>
+                <AnalyticsSummaryCard title="Booked Tickets" value={formatNumber(summary.bookedTickets)} icon={<Ticket />} className="summary-card--booked"/>
+                <AnalyticsSummaryCard title="Cancelled Tickets" value={formatNumber(summary.cancelledTickets)} icon={<XCircle />} className="summary-card--cancelled"/>
             </div>
 
-            <div className="analytics-grid-layout">
-                {/* Column 1: Category & Route Performance */}
-                <Card>
-                    <h2 className="admin-dashboard__grid-title">Category & Route Performance</h2>
-                    {categoryChartData.length > 0 && (
-                        <div style={{ width: '100%', height: 300 }}>
-                            <ResponsiveContainer>
-                                <PieChart>
-                                    <Pie
-                                        data={categoryChartData}
-                                        cx="50%"
-                                        cy="50%"
-                                        labelLine={false}
-                                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                        outerRadius={120}
-                                        dataKey="value"
-                                    >
-                                        {categoryChartData.map((entry) => (
-                                            <Cell key={`cell-${entry.name}`} fill={COLORS[CATEGORY_ORDER[entry.name as keyof typeof CATEGORY_ORDER] % COLORS.length]} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                                    <Legend />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        </div>
-                    )}
-                    
-                    {routeData.routes.length > 0 && (
-                        <>
-                            <h3 className="analytics-card-section-title"><i className="icon icon-route" style={{ fontSize: '20px' }}></i> Top Routes by Revenue</h3>
-                            <div className="analytics-table-wrapper">
-                                <table className="user-management__table analytics-table--detailed">
-                                    <thead>
-                                        <tr>
-                                            <th rowSpan={2}>Route</th>
-                                            <th colSpan={4} className="text-center">Bookings</th>
-                                            <th colSpan={4} className="text-center">Revenue</th>
-                                        </tr>
-                                        <tr>
-                                            <th className="text-right">Normal</th>
-                                            <th className="text-right">Child</th>
-                                            <th className="text-right">Senior</th>
-                                            <th className="text-right">Total</th>
-                                            <th className="text-right">Normal</th>
-                                            <th className="text-right">Child</th>
-                                            <th className="text-right">Senior</th>
-                                            <th className="text-right">Total</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {routeData.routes.map((r) => (
-                                            <tr key={r.route}>
-                                                <td><b>{r.route}</b></td>
-                                                <td className="text-right">{r.normalTickets.toLocaleString('en-IN')}</td>
-                                                <td className="text-right">{r.childTickets.toLocaleString('en-IN')}</td>
-                                                <td className="text-right">{r.seniorTickets.toLocaleString('en-IN')}</td>
-                                                <DataBarCell value={r.totalTickets} maxValue={routeData.maxTickets} formatter={(v) => v.toLocaleString('en-IN')} />
-                                                <td className="text-right">{formatCurrency(r.normalRevenue)}</td>
-                                                <td className="text-right">{formatCurrency(r.childRevenue)}</td>
-                                                <td className="text-right">{formatCurrency(r.seniorRevenue)}</td>
-                                                <DataBarCell value={r.totalRevenue} maxValue={routeData.maxRevenue} formatter={formatCurrency} />
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </>
-                    )}
-                </Card>
+            <Card>
+                <h2 className="admin-dashboard__grid-title">Visual Overview</h2>
+                <div className="analytics-grid-layout">
+                    {/* Booked Revenue Charts */}
+                    <div className="analytics-chart-container">
+                        <h3 className="analytics-card-section-title">Booked Revenue by Type</h3>
+                        <ResponsiveContainer width="100%" height={250}>
+                             <PieChart>
+                                <Pie data={chartData.bookedRevenueByCategory} cx="50%" cy="50%" labelLine={false} label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`} outerRadius={80} dataKey="value">
+                                    {chartData.bookedRevenueByCategory.map((entry) => <Cell key={`cell-${entry.name}`} fill={COLORS[entry.name]} />)}
+                                </Pie>
+                                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                                <Legend />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <h3 className="analytics-card-section-title">Top 5 Districts (Booked)</h3>
+                        <ResponsiveContainer width="100%" height={250}>
+                            <BarChart data={chartData.top5BookedDistricts} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                                <XAxis type="number" tickFormatter={(value) => `₹${Number(value) / 1000}k`} />
+                                <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} />
+                                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                                <Legend />
+                                <Bar dataKey="Normal" stackId="a" fill={COLORS.NORMAL} />
+                                <Bar dataKey="Child" stackId="a" fill={COLORS.CHILD} />
+                                <Bar dataKey="Senior" stackId="a" fill={COLORS.SENIOR} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                    {/* Cancelled Revenue Charts */}
+                     <div className="analytics-chart-container">
+                        <h3 className="analytics-card-section-title">Refunded Revenue by Type</h3>
+                         <ResponsiveContainer width="100%" height={250}>
+                             <PieChart>
+                                <Pie data={chartData.refundedRevenueByCategory} cx="50%" cy="50%" labelLine={false} label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`} outerRadius={80} dataKey="value">
+                                    {chartData.refundedRevenueByCategory.map((entry) => <Cell key={`cell-${entry.name}`} fill={COLORS[entry.name]} />)}
+                                </Pie>
+                                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                                <Legend />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <h3 className="analytics-card-section-title">Top 5 Districts (Refunded)</h3>
+                        <ResponsiveContainer width="100%" height={250}>
+                           <BarChart data={chartData.top5RefundedDistricts} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                                <XAxis type="number" tickFormatter={(value) => `₹${Number(value) / 1000}k`} />
+                                <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} />
+                                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                                <Legend />
+                                <Bar dataKey="Normal" stackId="a" fill={COLORS.NORMAL} />
+                                <Bar dataKey="Child" stackId="a" fill={COLORS.CHILD} />
+                                <Bar dataKey="Senior" stackId="a" fill={COLORS.SENIOR} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </Card>
 
-                {/* Column 2: District Performance */}
-                <Card>
-                    <h2 className="admin-dashboard__grid-title">District Performance</h2>
-                    {districtChartData.length > 0 && (
-                        <div style={{ width: '100%', height: 350 }}>
-                            <ResponsiveContainer>
-                                <BarChart data={districtChartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="district" tick={{ fontSize: 12 }} />
-                                    <YAxis 
-                                        tickFormatter={(value) => `₹${(Number(value)/1000).toFixed(0)}k`} 
-                                        tick={{ fontSize: 12 }} 
-                                    />
-                                    <Tooltip formatter={(value: number) => formatCurrency(Number(value))} />
-                                    <Legend />
-                                    <Bar dataKey="normal" stackId="a" fill={COLORS[0]} name="Normal" />
-                                    <Bar dataKey="child" stackId="a" fill={COLORS[1]} name="Child" />
-                                    <Bar dataKey="senior" stackId="a" fill={COLORS[2]} name="Senior" />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
+            <Card>
+                <div className="upload-schedules__tabs">
+                    <button onClick={() => setActiveTab('district')} className={`upload-schedules__tab-btn ${activeTab === 'district' ? 'upload-schedules__tab-btn--active' : ''}`}><MapPin size={20}/> By District</button>
+                    <button onClick={() => setActiveTab('route')} className={`upload-schedules__tab-btn ${activeTab === 'route' ? 'upload-schedules__tab-btn--active' : ''}`}><Route size={20}/> By Route</button>
+                </div>
+                 <div className="upload-schedules__content">
+                    {activeTab === 'district' ? (
+                        <DetailedAnalyticsTable data={byDistrict} type="district" />
+                    ) : (
+                        <DetailedAnalyticsTable data={byRoute} type="route" />
                     )}
-                    
-                    {districtData.districts.length > 0 && (
-                        <>
-                            <h3 className="analytics-card-section-title"><i className="icon icon-map-pin" style={{ fontSize: '20px' }}></i> District Totals</h3>
-                             <div className="analytics-table-wrapper">
-                                <table className="user-management__table analytics-table--detailed">
-                                    <thead>
-                                        <tr>
-                                            <th rowSpan={2}>District</th>
-                                            <th colSpan={4} className="text-center">Bookings</th>
-                                            <th colSpan={4} className="text-center">Revenue</th>
-                                        </tr>
-                                        <tr>
-                                            <th className="text-right">Normal</th>
-                                            <th className="text-right">Child</th>
-                                            <th className="text-right">Senior</th>
-                                            <th className="text-right">Total</th>
-                                            <th className="text-right">Normal</th>
-                                            <th className="text-right">Child</th>
-                                            <th className="text-right">Senior</th>
-                                            <th className="text-right">Total</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {districtData.districts.map((d) => (
-                                            <tr key={d.district}>
-                                                <td><b>{d.district}</b></td>
-                                                <td className="text-right">{d.normalTickets.toLocaleString('en-IN')}</td>
-                                                <td className="text-right">{d.childTickets.toLocaleString('en-IN')}</td>
-                                                <td className="text-right">{d.seniorTickets.toLocaleString('en-IN')}</td>
-                                                <DataBarCell value={d.totalTickets} maxValue={districtData.maxTickets} formatter={(v) => v.toLocaleString('en-IN')} />
-                                                <td className="text-right">{formatCurrency(d.normalRevenue)}</td>
-                                                <td className="text-right">{formatCurrency(d.childRevenue)}</td>
-                                                <td className="text-right">{formatCurrency(d.seniorRevenue)}</td>
-                                                <DataBarCell value={d.totalRevenue} maxValue={districtData.maxRevenue} formatter={formatCurrency} />
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </>
-                    )}
-                </Card>
-            </div>
+                 </div>
+            </Card>
+
         </div>
     );
 };
