@@ -44,7 +44,7 @@ const DetailedAnalyticsTable: React.FC<{
 
     const keyField = type === 'district' ? 'district' : 'route';
 
-    const revenueData = data.map(item => {
+    const revenueData = useMemo(() => data.map(item => {
         const bookedNormal = Number(item.bookedNormalRevenue);
         const bookedChild = Number(item.bookedChildRevenue);
         const bookedSenior = Number(item.bookedSeniorRevenue);
@@ -54,6 +54,15 @@ const DetailedAnalyticsTable: React.FC<{
         
         const bookedTotal = bookedNormal + bookedChild + bookedSenior;
         const cancelledTotal = cancelledNormal + cancelledChild + cancelledSenior;
+
+        const netNormal = bookedNormal - cancelledNormal;
+        const netChild = bookedChild - cancelledChild;
+        const netSenior = bookedSenior - cancelledSenior;
+
+        // Per user request: The row's "Net Total" is the sum of only the positive components.
+        const netTotal = (netNormal > 0 ? netNormal : 0) + 
+                         (netChild > 0 ? netChild : 0) + 
+                         (netSenior > 0 ? netSenior : 0);
 
         return {
             key: (item as any)[keyField],
@@ -65,81 +74,58 @@ const DetailedAnalyticsTable: React.FC<{
             cancelledSeniorRevenue: cancelledSenior,
             bookedTotal,
             cancelledTotal,
-            netNormal: bookedNormal - cancelledNormal,
-            netChild: bookedChild - cancelledChild,
-            netSenior: bookedSenior - cancelledSenior,
-            netTotal: bookedTotal + cancelledTotal - cancelledTotal,
+            netNormal,
+            netChild,
+            netSenior,
+            netTotal,
         };
-    });
+    }), [data, keyField]);
 
-    const ticketData = data.map(item => {
-    const bookedNormal = Number(item.bookedNormalTickets);
-    const bookedChild = Number(item.bookedChildTickets);
-    const bookedSenior = Number(item.bookedSeniorTickets);
-    const cancelledNormal = Number(item.cancelledNormalTickets);
-    const cancelledChild = Number(item.cancelledChildTickets);
-    const cancelledSenior = Number(item.cancelledSeniorTickets);
+    const ticketData = useMemo(() => data.map(item => {
+        const bookedNormal = Number(item.bookedNormalTickets);
+        const bookedChild = Number(item.bookedChildTickets);
+        const bookedSenior = Number(item.bookedSeniorTickets);
+        const cancelledNormal = Number(item.cancelledNormalTickets);
+        const cancelledChild = Number(item.cancelledChildTickets);
+        const cancelledSenior = Number(item.cancelledSeniorTickets);
 
-    const bookedTotal = bookedNormal + bookedChild + bookedSenior;
-    const cancelledTotal = cancelledNormal + cancelledChild + cancelledSenior;
-
-    // Step 1: combine booked + cancelled (all positive)
-    const combinedNormal = bookedNormal + cancelledNormal;
-    const combinedChild = bookedChild + cancelledChild;
-    const combinedSenior = bookedSenior + cancelledSenior;
-    const combinedTotal = combinedNormal + combinedChild + combinedSenior;
-
-    // Step 2: subtract cancelled once at the end
-    const netNormal = combinedNormal - cancelledNormal;
-    const netChild  = combinedChild  - cancelledChild;
-    const netSenior = combinedSenior - cancelledSenior;
-    const netTotal  = combinedTotal  - cancelledTotal;
-
-    return {
-        key: (item as any)[keyField],
-        bookedNormalTickets: bookedNormal,
-        bookedChildTickets: bookedChild,
-        bookedSeniorTickets: bookedSenior,
-        cancelledNormalTickets: cancelledNormal,
-        cancelledChildTickets: cancelledChild,
-        cancelledSeniorTickets: cancelledSenior,
-        bookedTotal,
-        cancelledTotal,
-        netNormal,
-        netChild,
-        netSenior,
-        netTotal,
-    };
-});
-
+        return {
+            key: (item as any)[keyField],
+            bookedNormalTickets: bookedNormal,
+            bookedChildTickets: bookedChild,
+            bookedSeniorTickets: bookedSenior,
+            cancelledNormalTickets: cancelledNormal,
+            cancelledChildTickets: cancelledChild,
+            cancelledSeniorTickets: cancelledSenior,
+            bookedTotal: bookedNormal + bookedChild + bookedSenior,
+            cancelledTotal: cancelledNormal + cancelledChild + cancelledSenior,
+        };
+    }), [data, keyField]);
     
     const revenueTotals = useMemo(() => {
-    const totals = revenueData.reduce((acc, row) => {
-        acc.bookedNormalRevenue += row.bookedNormalRevenue;
-        acc.bookedChildRevenue += row.bookedChildRevenue;
-        acc.bookedSeniorRevenue += row.bookedSeniorRevenue;
-        acc.bookedTotal += row.bookedTotal;
+        const totals = revenueData.reduce((acc, row) => {
+            acc.bookedNormalRevenue += row.bookedNormalRevenue;
+            acc.bookedChildRevenue += row.bookedChildRevenue;
+            acc.bookedSeniorRevenue += row.bookedSeniorRevenue;
+            acc.bookedTotal += row.bookedTotal;
+            acc.cancelledNormalRevenue += row.cancelledNormalRevenue;
+            acc.cancelledChildRevenue += row.cancelledChildRevenue;
+            acc.cancelledSeniorRevenue += row.cancelledSeniorRevenue;
+            acc.cancelledTotal += row.cancelledTotal;
+            return acc;
+        }, {
+            bookedNormalRevenue: 0, bookedChildRevenue: 0, bookedSeniorRevenue: 0, bookedTotal: 0,
+            cancelledNormalRevenue: 0, cancelledChildRevenue: 0, cancelledSeniorRevenue: 0, cancelledTotal: 0,
+        });
 
-        acc.cancelledNormalRevenue += row.cancelledNormalRevenue;
-        acc.cancelledChildRevenue += row.cancelledChildRevenue;
-        acc.cancelledSeniorRevenue += row.cancelledSeniorRevenue;
-        acc.cancelledTotal += row.cancelledTotal;
-
-        return acc;
-    }, {
-        bookedNormalRevenue: 0, bookedChildRevenue: 0, bookedSeniorRevenue: 0, bookedTotal: 0,
-        cancelledNormalRevenue: 0, cancelledChildRevenue: 0, cancelledSeniorRevenue: 0, cancelledTotal: 0,
-        netNormal: 0, netChild: 0, netSenior: 0, netTotal: 0,
-    });
-
-    // now compute net properly
-    totals.netNormal = totals.bookedNormalRevenue - totals.cancelledNormalRevenue;
-    totals.netChild  = totals.bookedChildRevenue  - totals.cancelledChildRevenue;
-    totals.netSenior = totals.bookedSeniorRevenue - totals.cancelledSeniorRevenue;
-    totals.netTotal  = totals.bookedTotal - totals.cancelledTotal;
-
-    return totals;
-}, [revenueData]);
+        // The grand total row should always calculate net revenue correctly.
+        const netNormal = totals.bookedNormalRevenue - totals.cancelledNormalRevenue;
+        const netChild = totals.bookedChildRevenue - totals.cancelledChildRevenue;
+        const netSenior = totals.bookedSeniorRevenue - totals.cancelledSeniorRevenue;
+        const netTotal = totals.bookedTotal - totals.cancelledTotal;
+        
+        return { ...totals, netNormal, netChild, netSenior, netTotal };
+    }, [revenueData]);
 
 
     const ticketTotals = useMemo(() => ticketData.reduce((acc, row) => {
@@ -288,18 +274,19 @@ export const RevenueAnalyticsPage: React.FC = () => {
             .sort((a, b) => CATEGORY_ORDER[a.name] - CATEGORY_ORDER[b.name]);
         
         const topDistrictsByRevenue = [...data.byDistrict]
-            .map(d => {
-                const gross = Number(d.bookedNormalRevenue) + Number(d.bookedChildRevenue) + Number(d.bookedSeniorRevenue);
-                const refunded = Number(d.cancelledNormalRevenue) + Number(d.cancelledChildRevenue) + Number(d.cancelledSeniorRevenue);
-                return {
-                    name: d.district,
-                    'Net Revenue': gross - refunded,
-                    'Refunded': refunded,
-                    'Gross': gross,
-                };
-            })
-            .sort((a, b) => b.Gross - a.Gross)
-            .slice(0, 5);
+    .map(d => {
+        const booked = Number(d.bookedNormalRevenue) + Number(d.bookedChildRevenue) + Number(d.bookedSeniorRevenue);
+        const refunded = Number(d.cancelledNormalRevenue) + Number(d.cancelledChildRevenue) + Number(d.cancelledSeniorRevenue);
+        return {
+            name: d.district,
+            'Total Revenue': booked + refunded, // <-- changed from Net Revenue
+            'Refunded': refunded,
+            'Booked': booked, // optional if you want to show separately
+        };
+    })
+    .sort((a, b) => b['Total Revenue'] - a['Total Revenue'])
+    .slice(0, 5);
+
 
 
         return { bookedRevenueByCategory, refundedRevenueByCategory, topDistrictsByRevenue };
@@ -366,8 +353,9 @@ export const RevenueAnalyticsPage: React.FC = () => {
                             <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} />
                             <Tooltip formatter={(value: number, name: string) => [formatCurrency(value), name]} />
                             <Legend />
-                            <Bar dataKey="Net Revenue" stackId="a" fill={COLORS.NORMAL} />
-                            <Bar dataKey="Refunded" stackId="a" fill={COLORS.REFUNDED} />
+                            <Bar dataKey="Total Revenue" stackId="a" fill={COLORS.NORMAL} />
+<Bar dataKey="Refunded" stackId="a" fill={COLORS.REFUNDED} />
+
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
