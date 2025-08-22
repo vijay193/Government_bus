@@ -1,3 +1,5 @@
+
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -737,11 +739,11 @@ apiRouter.get('/bookings/user/:userId', requireAuth, async (req, res) => {
 
   try {
     const [rows] = await dbPool.query(
-      `SELECT b.id AS bookingId, b.scheduleId, b.fare, b.originalFare, b.status, b.isFreeTicket, b.govtExamRegistrationNumber, b.bookingDate, b.journeyDate, b.origin, b.destination, b.discountType, b.passengerDetails, bs.seatId
+      `SELECT b.id AS bookingId, b.scheduleId, b.fare, b.originalFare, b.status, b.isFreeTicket, b.govtExamRegistrationNumber, b.bookingDate, b.origin, b.destination, b.discountType, b.passengerDetails, bs.seatId
        FROM bookings b
        LEFT JOIN bookedseats bs ON b.id = bs.bookingId
        WHERE b.userId = ?
-       ORDER BY b.journeyDate DESC, b.bookingDate DESC`,
+       ORDER BY b.bookingDate DESC`,
       [userId]
     );
 
@@ -757,7 +759,6 @@ apiRouter.get('/bookings/user/:userId', requireAuth, async (req, res) => {
           isFreeTicket: row.isFreeTicket,
           govtExamRegistrationNumber: row.govtExamRegistrationNumber,
           bookingDate: row.bookingDate,
-          journeyDate: row.journeyDate,
           origin: row.origin,
           destination: row.destination,
           discountType: row.discountType,
@@ -778,10 +779,10 @@ apiRouter.get('/bookings/user/:userId', requireAuth, async (req, res) => {
 
 apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
     const { scheduleId } = req.params;
-    const { origin: userOrigin, destination: userDestination, journeyDate } = req.query;
+    const { origin: userOrigin, destination: userDestination } = req.query;
 
-    if (!userOrigin || !userDestination || !journeyDate) {
-        return res.status(400).json({ message: 'Origin, destination, and journeyDate query parameters are required.' });
+    if (!userOrigin || !userDestination) {
+        return res.status(400).json({ message: 'Origin and destination query parameters are required.' });
     }
 
     try {
@@ -808,8 +809,8 @@ apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
             `SELECT bs.seatId, b.origin, b.destination
              FROM bookedseats bs
              JOIN bookings b ON bs.bookingId = b.id
-             WHERE b.scheduleId = ? AND b.journeyDate = ?`,
-            [scheduleId, journeyDate]
+             WHERE b.scheduleId = ?`,
+            [scheduleId]
         );
 
         const unavailableSeats = new Set();
@@ -834,10 +835,10 @@ apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
 });
 
 apiRouter.post('/bookings/free', requireAuth, async (req, res) => {
-    const { scheduleId, seatIds, origin, destination, journeyDate, registrationNumber, phone } = req.body;
+    const { scheduleId, seatIds, origin, destination, registrationNumber, phone } = req.body;
     const userId = req.user.id;
 
-    if (!scheduleId || !Array.isArray(seatIds) || !origin || !destination || !journeyDate || !registrationNumber || !phone) {
+    if (!scheduleId || !Array.isArray(seatIds) || !origin || !destination || !registrationNumber || !phone) {
         return res.status(400).json({ message: 'All booking and verification fields are required.' });
     }
     if (seatIds.length !== 1) {
@@ -867,8 +868,8 @@ apiRouter.post('/bookings/free', requireAuth, async (req, res) => {
         
         const bookingId = uuidv4();
         await connection.query(
-          'INSERT INTO bookings (id, userId, scheduleId, fare, originalFare, origin, destination, isFreeTicket, govtExamRegistrationNumber, journeyDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [bookingId, userId, scheduleId, 0, 0, origin, destination, true, registrationNumber, journeyDate]
+          'INSERT INTO bookings (id, userId, scheduleId, fare, originalFare, origin, destination, isFreeTicket, govtExamRegistrationNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [bookingId, userId, scheduleId, 0, 0, origin, destination, true, registrationNumber]
         );
         
         const seatInsertPromises = seatIds.map(seatId => connection.query('INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)', [bookingId, seatId, origin, destination]));
@@ -894,10 +895,10 @@ apiRouter.post('/bookings/free', requireAuth, async (req, res) => {
 });
 
 apiRouter.post("/bookings", requireAuth, async (req, res) => {
-    const { scheduleId, seats, origin, destination, journeyDate } = req.body;
+    const { scheduleId, seats, origin, destination } = req.body;
     const userId = req.user.id;
 
-    if (!scheduleId || !Array.isArray(seats) || seats.length === 0 || !origin || !destination || !journeyDate) {
+    if (!scheduleId || !Array.isArray(seats) || seats.length === 0 || !origin || !destination) {
         return res.status(400).json({ message: 'Missing or invalid required booking information.' });
     }
     
@@ -988,8 +989,8 @@ apiRouter.post("/bookings", requireAuth, async (req, res) => {
         const bookingId = uuidv4();
         await connection.execute(
             `INSERT INTO bookings 
-                (id, userId, scheduleId, fare, originalFare, bookingDate, isFreeTicket, origin, destination, discountType, passengerDetails, journeyDate) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                (id, userId, scheduleId, fare, originalFare, bookingDate, isFreeTicket, origin, destination, discountType, passengerDetails) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 bookingId,
                 userId,
@@ -1001,8 +1002,7 @@ apiRouter.post("/bookings", requireAuth, async (req, res) => {
                 origin,
                 destination,
                 discountTypeForDb,
-                passengerDetails.length > 0 ? JSON.stringify(passengerDetails) : null,
-                journeyDate
+                passengerDetails.length > 0 ? JSON.stringify(passengerDetails) : null
             ]
         );
 
@@ -1074,9 +1074,13 @@ apiRouter.post('/bookings/:bookingId/cancel', requireAuth, async (req, res) => {
         }
         
         const [hours, minutes] = originStop.departure.split(':');
-        const departureDateTime = new Date(booking.journeyDate);
+        const bookingDateTime = new Date(booking.bookingDate);
+        let departureDateTime = new Date(booking.bookingDate);
         departureDateTime.setHours(Number(hours), Number(minutes), 0, 0);
 
+        if (departureDateTime < bookingDateTime) {
+            departureDateTime.setDate(departureDateTime.getDate() + 1);
+        }
         const oneHourBeforeDeparture = new Date(departureDateTime.getTime() - 60 * 60 * 1000);
 
         if (new Date() >= oneHourBeforeDeparture) {
