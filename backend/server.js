@@ -809,7 +809,7 @@ apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
             `SELECT bs.seatId, b.origin, b.destination
              FROM bookedseats bs
              JOIN bookings b ON bs.bookingId = b.id
-             WHERE b.scheduleId = ?`,
+             WHERE b.scheduleId = ? AND DATE(b.bookingDate) = CURDATE()`,
             [scheduleId]
         );
 
