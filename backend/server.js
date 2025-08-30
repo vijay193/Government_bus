@@ -43,6 +43,17 @@ const handleDBError = (res, error, context) => {
   return res.status(500).json({ message: `An internal server error occurred in ${context}.` });
 };
 /**
+ * Get the current date in YYYY-MM-DD format based on server's local time.
+ */
+const getTodayDateString = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+/**
  * Fetch system settings from the settings table.
  * Returns a map of key/value pairs, with boolean values.
  */
@@ -739,11 +750,11 @@ apiRouter.get('/bookings/user/:userId', requireAuth, async (req, res) => {
 
   try {
     const [rows] = await dbPool.query(
-      `SELECT b.id AS bookingId, b.scheduleId, b.fare, b.originalFare, b.status, b.isFreeTicket, b.govtExamRegistrationNumber, b.bookingDate, b.origin, b.destination, b.discountType, b.passengerDetails, bs.seatId
+      `SELECT b.id AS bookingId, b.scheduleId, b.fare, b.originalFare, b.status, b.isFreeTicket, b.govtExamRegistrationNumber, b.bookingDate, b.journeyDate, b.departureTime, b.origin, b.destination, b.discountType, b.passengerDetails, bs.seatId
        FROM bookings b
        LEFT JOIN bookedseats bs ON b.id = bs.bookingId
        WHERE b.userId = ?
-       ORDER BY b.bookingDate DESC`,
+       ORDER BY b.journeyDate DESC, b.bookingDate DESC`,
       [userId]
     );
 
@@ -759,6 +770,8 @@ apiRouter.get('/bookings/user/:userId', requireAuth, async (req, res) => {
           isFreeTicket: row.isFreeTicket,
           govtExamRegistrationNumber: row.govtExamRegistrationNumber,
           bookingDate: row.bookingDate,
+          journeyDate: row.journeyDate,
+          departureTime: formatTime(row.departureTime),
           origin: row.origin,
           destination: row.destination,
           discountType: row.discountType,
@@ -779,11 +792,12 @@ apiRouter.get('/bookings/user/:userId', requireAuth, async (req, res) => {
 
 apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
     const { scheduleId } = req.params;
-    const { origin: userOrigin, destination: userDestination } = req.query;
+    const { origin: userOrigin, destination: userDestination, journeyDate, departureTime } = req.query;
 
-    if (!userOrigin || !userDestination) {
-        return res.status(400).json({ message: 'Origin and destination query parameters are required.' });
+    if (!userOrigin || !userDestination || !departureTime) {
+        return res.status(400).json({ message: 'Origin, destination, and departure time query parameters are required.' });
     }
+    const dateToQuery = journeyDate || getTodayDateString();
 
     try {
         const schedulesMap = await fetchAndAssembleSchedules(dbPool, scheduleId);
@@ -809,8 +823,8 @@ apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
             `SELECT bs.seatId, b.origin, b.destination
              FROM bookedseats bs
              JOIN bookings b ON bs.bookingId = b.id
-             WHERE b.scheduleId = ? AND DATE(b.bookingDate) = CURDATE()`,
-            [scheduleId]
+             WHERE b.scheduleId = ? AND b.journeyDate = ? AND b.departureTime = ?`,
+            [scheduleId, dateToQuery, departureTime]
         );
 
         const unavailableSeats = new Set();
@@ -835,10 +849,11 @@ apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
 });
 
 apiRouter.post('/bookings/free', requireAuth, async (req, res) => {
-    const { scheduleId, seatIds, origin, destination, registrationNumber, phone } = req.body;
+    const { scheduleId, seatIds, origin, destination, registrationNumber, phone, journeyDate, departureTime } = req.body;
     const userId = req.user.id;
+    const dateToQuery = journeyDate || getTodayDateString();
 
-    if (!scheduleId || !Array.isArray(seatIds) || !origin || !destination || !registrationNumber || !phone) {
+    if (!scheduleId || !Array.isArray(seatIds) || !origin || !destination || !registrationNumber || !phone || !departureTime) {
         return res.status(400).json({ message: 'All booking and verification fields are required.' });
     }
     if (seatIds.length !== 1) {
@@ -868,8 +883,8 @@ apiRouter.post('/bookings/free', requireAuth, async (req, res) => {
         
         const bookingId = uuidv4();
         await connection.query(
-          'INSERT INTO bookings (id, userId, scheduleId, fare, originalFare, origin, destination, isFreeTicket, govtExamRegistrationNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [bookingId, userId, scheduleId, 0, 0, origin, destination, true, registrationNumber]
+          'INSERT INTO bookings (id, userId, scheduleId, fare, originalFare, origin, destination, isFreeTicket, govtExamRegistrationNumber, journeyDate, departureTime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [bookingId, userId, scheduleId, 0, 0, origin, destination, true, registrationNumber, dateToQuery, departureTime]
         );
         
         const seatInsertPromises = seatIds.map(seatId => connection.query('INSERT INTO bookedseats (bookingId, seatId, origin, destination) VALUES (?, ?, ?, ?)', [bookingId, seatId, origin, destination]));
@@ -895,10 +910,11 @@ apiRouter.post('/bookings/free', requireAuth, async (req, res) => {
 });
 
 apiRouter.post("/bookings", requireAuth, async (req, res) => {
-    const { scheduleId, seats, origin, destination } = req.body;
+    const { scheduleId, seats, origin, destination, journeyDate, departureTime } = req.body;
     const userId = req.user.id;
+    const dateToQuery = journeyDate || getTodayDateString();
 
-    if (!scheduleId || !Array.isArray(seats) || seats.length === 0 || !origin || !destination) {
+    if (!scheduleId || !Array.isArray(seats) || seats.length === 0 || !origin || !destination || !departureTime) {
         return res.status(400).json({ message: 'Missing or invalid required booking information.' });
     }
     
@@ -989,8 +1005,8 @@ apiRouter.post("/bookings", requireAuth, async (req, res) => {
         const bookingId = uuidv4();
         await connection.execute(
             `INSERT INTO bookings 
-                (id, userId, scheduleId, fare, originalFare, bookingDate, isFreeTicket, origin, destination, discountType, passengerDetails) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                (id, userId, scheduleId, fare, originalFare, bookingDate, journeyDate, departureTime, isFreeTicket, origin, destination, discountType, passengerDetails) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 bookingId,
                 userId,
@@ -998,6 +1014,8 @@ apiRouter.post("/bookings", requireAuth, async (req, res) => {
                 totalFare,
                 totalFare,
                 new Date(),
+                dateToQuery,
+                departureTime,
                 false,
                 origin,
                 destination,
@@ -1059,23 +1077,15 @@ apiRouter.post('/bookings/:bookingId/cancel', requireAuth, async (req, res) => {
             await connection.rollback();
             return res.status(400).json({ message: 'This booking has already been fully cancelled.' });
         }
-
-        const schedulesMap = await fetchAndAssembleSchedules(connection, booking.scheduleId);
-        const schedule = schedulesMap[booking.scheduleId];
-        if (!schedule) {
+        
+        if (!booking.departureTime) {
             await connection.rollback();
-            return res.status(404).json({ message: 'Could not find schedule details for this booking.' });
+            return res.status(500).json({ message: 'Could not determine departure time for this booking.' });
         }
         
-        const originStop = schedule.fullRouteStops.find(s => s.name.trim().toLowerCase() === booking.origin.trim().toLowerCase());
-        if (!originStop || !originStop.departure) {
-             await connection.rollback();
-             return res.status(500).json({ message: 'Could not determine departure time for this booking.' });
-        }
-        
-        const [hours, minutes] = originStop.departure.split(':');
+        const [hours, minutes] = booking.departureTime.split(':');
         const bookingDateTime = new Date(booking.bookingDate);
-        let departureDateTime = new Date(booking.bookingDate);
+        let departureDateTime = new Date(booking.journeyDate);
         departureDateTime.setHours(Number(hours), Number(minutes), 0, 0);
 
         if (departureDateTime < bookingDateTime) {
