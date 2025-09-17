@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useAuth } from '../../hooks/useAuth';
@@ -8,6 +6,7 @@ import type { RevenueAnalyticsData, DetailedDistrictAnalytics, DetailedRouteAnal
 import { Card } from '../../components/common/Card';
 import { UserRole } from '../../types';
 import { TrendingUp, IndianRupee, Ticket, AlertCircle, TrendingDown, Users, Route, MapPin, XCircle } from 'lucide-react';
+import { BackButton } from '../../components/common/BackButton';
 
 const COLORS = {
     'NORMAL': '#4f46e5',
@@ -273,19 +272,21 @@ export const RevenueAnalyticsPage: React.FC = () => {
             .map(c => ({ name: c.type, value: Number(c.refundedRevenue) }))
             .sort((a, b) => CATEGORY_ORDER[a.name] - CATEGORY_ORDER[b.name]);
         
+        // Fix: Correctly calculate Net Revenue and sort by Gross Revenue for the top districts chart.
+        // The previous calculation was logically incorrect and likely causing type inference issues.
         const topDistrictsByRevenue = [...data.byDistrict]
-    .map(d => {
-        const booked = Number(d.bookedNormalRevenue) + Number(d.bookedChildRevenue) + Number(d.bookedSeniorRevenue);
-        const refunded = Number(d.cancelledNormalRevenue) + Number(d.cancelledChildRevenue) + Number(d.cancelledSeniorRevenue);
-        return {
-            name: d.district,
-            'Total Revenue': booked + refunded, // <-- changed from Net Revenue
-            'Refunded': refunded,
-            'Booked': booked, // optional if you want to show separately
-        };
-    })
-    .sort((a, b) => b['Total Revenue'] - a['Total Revenue'])
-    .slice(0, 5);
+            .map(d => {
+                const booked = Number(d.bookedNormalRevenue) + Number(d.bookedChildRevenue) + Number(d.bookedSeniorRevenue);
+                const refunded = Number(d.cancelledNormalRevenue) + Number(d.cancelledChildRevenue) + Number(d.cancelledSeniorRevenue);
+                return {
+                    name: d.district,
+                    'Net Revenue': booked - refunded,
+                    'Refunded': refunded,
+                    'Gross Revenue': booked,
+                };
+            })
+            .sort((a, b) => b['Gross Revenue'] - a['Gross Revenue'])
+            .slice(0, 5);
 
 
 
@@ -302,10 +303,17 @@ export const RevenueAnalyticsPage: React.FC = () => {
     return (
         <div className="space-y-6">
             <Card>
-                <h1 className="admin-page-header__title"><TrendingUp /> Revenue Analytics</h1>
-                <p className="admin-page-header__subtitle">
-                    {user?.role === UserRole.ADMIN ? 'Global overview of all revenue streams.' : 'Performance overview for your assigned districts.'}
-                </p>
+                <div className="page-header-with-back">
+                    <BackButton to="/admin" />
+                    <div>
+                        <h1 className="admin-page-header__title" style={{ marginBottom: 0 }}>
+                            <TrendingUp /> Revenue Analytics
+                        </h1>
+                        <p className="admin-page-header__subtitle" style={{ marginBottom: 0, marginTop: '0.25rem' }}>
+                            {user?.role === UserRole.ADMIN ? 'Global overview of all revenue streams.' : 'Performance overview for your assigned districts.'}
+                        </p>
+                    </div>
+                </div>
             </Card>
 
             <div className="analytics-summary-grid">
@@ -353,8 +361,9 @@ export const RevenueAnalyticsPage: React.FC = () => {
                             <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} />
                             <Tooltip formatter={(value: number, name: string) => [formatCurrency(value), name]} />
                             <Legend />
-                            <Bar dataKey="Total Revenue" stackId="a" fill={COLORS.NORMAL} />
-<Bar dataKey="Refunded" stackId="a" fill={COLORS.REFUNDED} />
+                            {/* Fix: Update Bar components to use correct data keys for stacked chart representing gross revenue. */}
+                            <Bar dataKey="Net Revenue" name="Net Revenue" stackId="a" fill={COLORS.NORMAL} />
+                            <Bar dataKey="Refunded" stackId="a" fill={COLORS.REFUNDED} />
 
                         </BarChart>
                     </ResponsiveContainer>

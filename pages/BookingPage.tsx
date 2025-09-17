@@ -12,6 +12,7 @@ import { Card } from '../components/common/Card';
 import { Modal } from '../components/common/Modal';
 import { SEAT_PRICE } from '../constants';
 import { Ticket, X, CheckCircle, Ban, Gift, ArrowRight, Download, Trash2, Users } from 'lucide-react';
+import { BackButton } from '../components/common/BackButton';
 
 type BookingMode = 'paid' | 'free';
 type SeatType = 'normal' | 'child' | 'senior';
@@ -577,8 +578,13 @@ export const BookingPage: React.FC = () => {
 
   return (
     <div className="container booking-page">
-      <h1 className="booking-page__title">Book Your Seats</h1>
-      <p className="booking-page__subtitle">{selectedOrigin} to {selectedDestination}</p>
+      <div className="page-header-with-back">
+        <BackButton />
+        <div>
+          <h1 className="booking-page__title">Book Your Seats</h1>
+          <p className="booking-page__subtitle">{selectedOrigin} to {selectedDestination}</p>
+        </div>
+      </div>
       
       <div className="booking-page__layout">
         <div className={`booking-page__seat-area ${isSeatLayoutLoading ? 'booking-page__seat-area--loading' : ''}`}>

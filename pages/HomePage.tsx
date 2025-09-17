@@ -6,7 +6,7 @@ import { ScheduleCard } from '../components/bus/ScheduleCard';
 import type { Schedule, BusLocation } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
-import { Search, Map, Route } from 'lucide-react';
+import { Search, Map, Route, XCircle } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -33,17 +33,41 @@ export const HomePage: React.FC = () => {
       }
     };
     fetchDistricts();
+    
+    // Restore search state from session storage on component mount
+    try {
+        const savedState = sessionStorage.getItem('homeSearchState');
+        if (savedState) {
+            const { schedules, trackingData, searchType, origin, destination, district } = JSON.parse(savedState);
+            setSchedules(schedules || []);
+            setTrackingData(trackingData || {});
+            setSearchType(searchType || 'route');
+            setOrigin(origin || '');
+            setDestination(destination || '');
+            setDistrict(district || '');
+        }
+    } catch (e) {
+        console.error("Could not restore search state from session storage", e);
+        sessionStorage.removeItem('homeSearchState');
+    }
+
   }, []);
+
+  const saveSearchState = (data: {
+      schedules: Schedule[],
+      trackingData: Record<string, BusLocation | null>,
+      searchType: 'route' | 'district',
+      origin: string,
+      destination: string,
+      district: string
+  }) => {
+      sessionStorage.setItem('homeSearchState', JSON.stringify(data));
+  };
 
   const handleTabChange = (type: 'route' | 'district') => {
     if (searchType !== type) {
       setSearchType(type);
-      setSchedules([]);
-      setTrackingData({});
-      setError(null);
-      setOrigin('');
-      setDestination('');
-      setDistrict('');
+      handleClearSearch(true); // Clear results when changing tab
     }
   };
 
@@ -62,10 +86,11 @@ export const HomePage: React.FC = () => {
         results = await api.getSchedulesByRoute(origin, destination);
       }
       setSchedules(results);
+
+      let newTrackingData: Record<string, BusLocation | null> = {};
       if (results.length === 0) {
         setError("No buses found for the selected criteria.");
       } else {
-        // Fetch tracking data for all found schedules
         const trackingPromises = results.map(schedule => 
             api.trackBus(schedule.id).catch(err => {
                 console.warn(`Could not fetch tracking for ${schedule.id}`, err);
@@ -73,7 +98,6 @@ export const HomePage: React.FC = () => {
             })
         );
         const trackingResults = await Promise.all(trackingPromises);
-        const newTrackingData: Record<string, BusLocation | null> = {};
         trackingResults.forEach(data => {
             if (data) {
                 newTrackingData[data.busId] = data;
@@ -81,11 +105,32 @@ export const HomePage: React.FC = () => {
         });
         setTrackingData(newTrackingData);
       }
+      
+      saveSearchState({
+          schedules: results,
+          trackingData: newTrackingData,
+          searchType,
+          origin,
+          destination,
+          district
+      });
+
     } catch (err) {
       setError("Failed to fetch schedules. Please try again later.");
     } finally {
       setIsLoading(false);
     }
+  };
+  
+  const handleClearSearch = (preserveTab: boolean = false) => {
+      sessionStorage.removeItem('homeSearchState');
+      setSchedules([]);
+      setTrackingData({});
+      setError(null);
+      setOrigin('');
+      setDestination('');
+      setDistrict('');
+      if (!preserveTab) setSearchType('route');
   };
 
   return (
@@ -126,9 +171,14 @@ export const HomePage: React.FC = () => {
                 {districts.map(d => <option key={d} value={d} />)}
               </datalist>
 
-              <Button type="submit" isLoading={isLoading} className="home-page__search-button">
-                <Search size={20} /> Search Buses
-              </Button>
+              <div className="home-page__form-actions">
+                <Button type="button" variant="secondary" onClick={() => handleClearSearch()} disabled={isLoading || (schedules.length === 0 && !origin && !destination && !district)}>
+                  <XCircle size={20} /> Clear
+                </Button>
+                <Button type="submit" isLoading={isLoading} className="home-page__search-button">
+                  <Search size={20} /> Search Buses
+                </Button>
+              </div>
             </div>
           </form>
         </Card>

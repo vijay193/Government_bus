@@ -9,6 +9,7 @@ import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { Download, QrCode, Calendar, IndianRupee, Star, Armchair, XCircle, AlertCircle, MapPin, CheckCircle } from 'lucide-react';
+import { BackButton } from '../components/common/BackButton';
 
 const BookingDetailCard: React.FC<{ booking: UserBooking, isCancellationEnabled: boolean, onBookingUpdate: () => void }> = ({ booking, isCancellationEnabled, onBookingUpdate }) => {
     const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -381,8 +382,13 @@ export const UserDashboardPage: React.FC = () => {
 
     return (
         <div className="container dashboard-page">
-            <h1 className="dashboard-page__title">My Bookings</h1>
-            <p className="dashboard-page__subtitle">View and manage your past and upcoming trips.</p>
+            <div className="page-header-with-back">
+                <BackButton />
+                <div>
+                    <h1 className="dashboard-page__title">My Bookings</h1>
+                    <p className="dashboard-page__subtitle">View and manage your past and upcoming trips.</p>
+                </div>
+            </div>
 
             <div className="dashboard-page__bookings-list">
                 {isLoading && (

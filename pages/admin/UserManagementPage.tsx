@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
@@ -10,6 +8,7 @@ import { Users, PlusCircle, Edit, Trash2, Shield, User as UserIcon } from 'lucid
 import { SubAdminFormModal } from '../../components/admin/SubAdminFormModal';
 import { EditUserModal } from '../../components/admin/EditUserModal';
 import { useAuth } from '../../hooks/useAuth';
+import { BackButton } from '../../components/common/BackButton';
 
 export const AdminUserManagementPage: React.FC = () => {
     const [users, setUsers] = useState<User[]>([]);
@@ -104,18 +103,23 @@ export const AdminUserManagementPage: React.FC = () => {
     return (
         <>
             <Card>
-                <div className="user-management__header">
-                    <div>
-                        <h2 className="admin-page-header__title">
-                            <Users /> User Management
-                        </h2>
-                        <p className="admin-page-header__subtitle">Manage all user and sub-admin accounts.</p>
+                <div className="page-header-with-back" style={{ marginBottom: '1.5rem' }}>
+                    <BackButton to="/admin" />
+                    <div className="user-management__header-content">
+                        <div>
+                            <h2 className="admin-page-header__title" style={{ marginBottom: 0 }}>
+                                <Users /> User Management
+                            </h2>
+                            <p className="admin-page-header__subtitle" style={{ marginBottom: 0, marginTop: '0.25rem' }}>
+                                Manage all user and sub-admin accounts.
+                            </p>
+                        </div>
+                        {loggedInUser?.role === UserRole.ADMIN && (
+                            <Button onClick={handleOpenCreateModal}>
+                                <PlusCircle size={20} /> Add Sub-Admin
+                            </Button>
+                        )}
                     </div>
-                    {loggedInUser?.role === UserRole.ADMIN && (
-                        <Button onClick={handleOpenCreateModal}>
-                            <PlusCircle size={20} /> Add Sub-Admin
-                        </Button>
-                    )}
                 </div>
 
                 {isLoading && <div className="text-center py-8">Loading users...</div>}

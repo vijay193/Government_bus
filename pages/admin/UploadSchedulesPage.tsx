@@ -1,5 +1,3 @@
-
-
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../services/api';
@@ -7,6 +5,7 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import type { ParsedSchedule, SeatLayout } from '../../types';
 import { UploadCloud, ListChecks, AlertTriangle, CheckCircle, FileUp, Download, FileText } from 'lucide-react';
+import { BackButton } from '../../components/common/BackButton';
 
 type UploadMode = 'csv' | 'text';
 
@@ -203,8 +202,17 @@ export const UploadSchedulesPage: React.FC = () => {
 
     return (
         <Card>
-            <h1 className="admin-page-header__title"><UploadCloud /> Upload New Schedules</h1>
-            <p className="admin-page-header__subtitle">Efficiently add new bus routes by uploading a structured file or pasting text.</p>
+            <div className="page-header-with-back" style={{ marginBottom: '1rem' }}>
+                <BackButton to="/admin" />
+                <div>
+                    <h1 className="admin-page-header__title" style={{ marginBottom: 0 }}>
+                        <UploadCloud /> Upload New Schedules
+                    </h1>
+                    <p className="admin-page-header__subtitle" style={{ marginBottom: 0, marginTop: '0.25rem' }}>
+                        Efficiently add new bus routes by uploading a structured file or pasting text.
+                    </p>
+                </div>
+            </div>
             
             <div className="upload-schedules__tabs">
                 <button onClick={() => handleModeChange('csv')} className={`upload-schedules__tab-btn ${mode === 'csv' ? 'upload-schedules__tab-btn--active' : ''}`}><FileUp size={20}/> CSV Upload</button>

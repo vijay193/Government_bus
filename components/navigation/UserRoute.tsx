@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { UserRole } from '../../types';
 
@@ -9,6 +9,7 @@ interface UserRouteProps {
 
 const UserRoute: React.FC<UserRouteProps> = ({ children }) => {
   const { isAuthenticated, user, isLoading } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return <div className="loader-overlay"><div className="page-loader"></div></div>;
@@ -16,7 +17,7 @@ const UserRoute: React.FC<UserRouteProps> = ({ children }) => {
 
   // Redirect if not authenticated
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
   
   // or not a regular USER

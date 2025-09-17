@@ -1,5 +1,3 @@
-
-
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../services/api';
@@ -7,6 +5,7 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import type { ParsedBeneficiary } from '../../types';
 import { UserPlus, FileText, ListChecks, AlertTriangle, CheckCircle, FileUp, Download, UserCheck } from 'lucide-react';
+import { BackButton } from '../../components/common/BackButton';
 
 type UploadMode = 'csv' | 'text';
 
@@ -167,8 +166,17 @@ export const BulkUserUploadPage: React.FC = () => {
 
     return (
         <Card>
-            <h1 className="admin-page-header__title"><UserPlus /> Bulk Beneficiary Upload</h1>
-            <p className="admin-page-header__subtitle">Create multiple password-less user accounts for beneficiaries. These users will log in using an OTP sent to their phone.</p>
+            <div className="page-header-with-back" style={{ marginBottom: '1rem' }}>
+                <BackButton to="/admin" />
+                <div>
+                    <h1 className="admin-page-header__title" style={{ marginBottom: 0 }}>
+                        <UserPlus /> Bulk Beneficiary Upload
+                    </h1>
+                    <p className="admin-page-header__subtitle" style={{ marginBottom: 0, marginTop: '0.25rem' }}>
+                        Create multiple password-less user accounts for beneficiaries. These users will log in using an OTP sent to their phone.
+                    </p>
+                </div>
+            </div>
             
             <div className="upload-schedules__tabs">
                 <button onClick={() => handleModeChange('csv')} className={`upload-schedules__tab-btn ${mode === 'csv' ? 'upload-schedules__tab-btn--active' : ''}`}><FileUp size={20}/> CSV Upload</button>

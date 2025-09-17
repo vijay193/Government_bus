@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import type { PassCard } from '../types';
 import { Card } from '../components/common/Card';
 import { AlertCircle, Shield, ShieldCheck, ArrowRight, Calendar, User, GitCommitHorizontal, KeyRound, Star } from 'lucide-react';
+import { BackButton } from '../components/common/BackButton';
 
 const PassCardDisplay: React.FC<{ pass: PassCard }> = ({ pass }) => {
     const isExpired = new Date(pass.expiryDate) < new Date();
@@ -126,7 +127,10 @@ export const PassCardPage: React.FC = () => {
     }
     
     return (
-        <div>
+        <div className="pass-card-page">
+            <div className="page-header-with-back">
+                <BackButton />
+            </div>
             { passCard ? (
                 <PassCardDisplay pass={passCard} />
             ) : (

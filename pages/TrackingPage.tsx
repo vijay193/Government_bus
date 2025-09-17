@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLocation, Link } from 'react-router-dom';
 import { Card } from '../components/common/Card';
 import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
 import { api } from '../services/api';
-import type { BusLocation } from '../types';
-import { MapPin, Search, CheckCircle, CircleDot, Hourglass, BusFront } from 'lucide-react';
+import type { BusLocation, Schedule } from '../types';
+import { MapPin, Search, CheckCircle, CircleDot, Hourglass, BusFront, Ticket } from 'lucide-react';
+import { BackButton } from '../components/common/BackButton';
 
 const RouteDisplay: React.FC<{ location: BusLocation }> = ({ location }) => {
     const { routeStops, currentStopIndex, isAtStop } = location;
@@ -96,6 +97,7 @@ export const TrackingPage: React.FC = () => {
     const routerLocation = useLocation();
     const [busId, setBusId] = useState(routerLocation.state?.busId || '');
     const [location, setLocation] = useState<BusLocation | null>(null);
+    const [schedule, setSchedule] = useState<Schedule | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -104,10 +106,22 @@ export const TrackingPage: React.FC = () => {
         setIsLoading(true);
         setError(null);
         setLocation(null);
+        setSchedule(null);
         try {
-            const result = await api.trackBus(idToTrack);
-            if (result) {
-                setLocation(result);
+            const [scheduleResult, locationResult] = await Promise.all([
+                api.getScheduleById(idToTrack).catch(err => {
+                    console.warn(`Could not fetch schedule for ${idToTrack}`, err);
+                    return null;
+                }),
+                api.trackBus(idToTrack).catch(err => {
+                    console.warn(`Could not fetch tracking for ${idToTrack}`, err);
+                    return null;
+                })
+            ]);
+
+            setSchedule(scheduleResult);
+            if (locationResult) {
+                setLocation(locationResult);
             } else {
                 setError('Bus not found or tracking is not available for this route.');
             }
@@ -125,6 +139,46 @@ export const TrackingPage: React.FC = () => {
         }
     }, [routerLocation.state?.busId, trackBusById]);
 
+    const bookingStatus = useMemo(() => {
+        if (!schedule || !schedule.bookingEnabled) {
+            return { enabled: false, message: 'Booking Unavailable' };
+        }
+
+        if (!location || !location.routeStops || location.routeStops.length === 0) {
+            return { enabled: true, message: 'Book Seats' };
+        }
+
+        const origin = schedule.origin;
+        if (!origin) {
+            return { enabled: true, message: 'Book Seats' };
+        }
+
+        const originStopIndex = location.routeStops.findIndex(
+            stop => stop.name.trim().toLowerCase() === origin.trim().toLowerCase()
+        );
+        
+        if (originStopIndex === -1) {
+            return { enabled: true, message: 'Book Seats' };
+        }
+        
+        const { currentStopIndex, isAtStop, routeStops } = location;
+        const lastStopIndex = routeStops.length - 1;
+
+        if (currentStopIndex === lastStopIndex && isAtStop) {
+            return { enabled: false, message: 'Journey Completed' };
+        }
+
+        if (originStopIndex < currentStopIndex) {
+            return { enabled: false, message: 'Departed' };
+        }
+
+        if (originStopIndex === currentStopIndex && !isAtStop) {
+            return { enabled: false, message: 'Departed' };
+        }
+
+        return { enabled: true, message: 'Book Seats' };
+    }, [schedule, location]);
+
     const handleFormSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         trackBusById(busId);
@@ -133,6 +187,10 @@ export const TrackingPage: React.FC = () => {
     return (
         <div className="container tracking-page">
             <Card className="tracking-page__card">
+                <div className="tracking-page__header">
+                    <BackButton />
+                </div>
+
                 <h2 className="tracking-page__title">
                     <MapPin /> Real-Time Bus Tracking
                 </h2>
@@ -142,6 +200,29 @@ export const TrackingPage: React.FC = () => {
                         <Search size={20} /> Track Bus
                     </Button>
                 </form>
+
+                 {schedule && (
+                    <div className="tracking-page__booking-action">
+                        {bookingStatus.enabled ? (
+                            <Link 
+                                to={`/book/${schedule.id}`} 
+                                state={{
+                                    fare: schedule.fare,
+                                    userOrigin: schedule.origin,
+                                    userDestination: schedule.destination,
+                                }}
+                            >
+                                <Button variant="primary" className="btn--large">
+                                    <Ticket size={20}/> {bookingStatus.message}
+                                </Button>
+                            </Link>
+                        ) : (
+                            <Button variant="secondary" disabled className="btn--large">
+                                {bookingStatus.message}
+                            </Button>
+                        )}
+                    </div>
+                )}
 
                 {error && <p className="tracking-page__error">{error}</p>}
                 

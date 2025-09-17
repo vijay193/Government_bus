@@ -1,11 +1,10 @@
-
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '../../components/common/Card';
 import { api } from '../../services/api';
 import { Settings, AlertCircle, CheckCircle, Percent, MapPin, Save, Loader2, UserCog } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
+import { BackButton } from '../../components/common/BackButton';
 
 const ToggleSwitch = ({ enabled, onChange, disabled }: { enabled: boolean, onChange: (checked: boolean) => void, disabled?: boolean }) => {
     return (
@@ -290,11 +289,16 @@ export const AdminSettingsPage: React.FC = () => {
     const [isDiscountSystemEnabled, setIsDiscountSystemEnabled] = useState(false);
     return (
         <Card>
-            <div className="admin-page-header">
-                <h2 className="admin-page-header__title">
-                    <Settings /> System Settings
-                </h2>
-                <p className="admin-page-header__subtitle">Manage global features of the application.</p>
+            <div className="page-header-with-back" style={{ marginBottom: '2rem' }}>
+                <BackButton to="/admin" />
+                <div>
+                    <h2 className="admin-page-header__title" style={{ marginBottom: 0 }}>
+                        <Settings /> System Settings
+                    </h2>
+                    <p className="admin-page-header__subtitle" style={{ marginBottom: 0, marginTop: '0.25rem' }}>
+                        Manage global features of the application.
+                    </p>
+                </div>
             </div>
             
             <div className="admin-settings-sections">

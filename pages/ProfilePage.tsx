@@ -7,6 +7,7 @@ import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
 import type { User } from '../types';
 import { User as UserIcon, Save, AlertCircle, CheckCircle } from 'lucide-react';
+import { BackButton } from '../components/common/BackButton';
 
 // Helper to safely get the correct gender value, handling potential casing issues or null values.
 const getSanitizedGender = (gender?: string): 'MALE' | 'FEMALE' | 'OTHER' => {
@@ -126,14 +127,19 @@ export const ProfilePage: React.FC = () => {
     };
 
     return (
-        <div className="container" style={{ paddingTop: '2rem', paddingBottom: '2rem' }}>
+        <div className="container profile-page" style={{ paddingTop: '2rem', paddingBottom: '2rem' }}>
             <Card className="auth-card" style={{ maxWidth: '42rem', margin: 'auto' }}>
-                <h2 className="admin-page-header__title">
-                    <UserIcon /> My Profile
-                </h2>
-                <p className="admin-page-header__subtitle">
-                    Update your personal information and password.
-                </p>
+                <div className="page-header-with-back">
+                    <BackButton />
+                    <div>
+                        <h2 className="admin-page-header__title">
+                            <UserIcon /> My Profile
+                        </h2>
+                        <p className="admin-page-header__subtitle">
+                            Update your personal information and password.
+                        </p>
+                    </div>
+                </div>
 
                 <form onSubmit={handleSubmit} className="auth-form" style={{ marginTop: '2rem' }}>
                     {error && (

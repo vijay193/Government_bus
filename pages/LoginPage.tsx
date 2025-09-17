@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Card } from '../components/common/Card';
 import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
@@ -23,15 +23,21 @@ export const LoginPage: React.FC = () => {
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
   
   const handleLoginSuccess = (sessionData: { token: string; user: User }) => {
     login(sessionData);
-    if (sessionData.user.role === UserRole.ADMIN || sessionData.user.role === UserRole.SUB_ADMIN) {
-        navigate('/admin');
-    } else {
-        navigate('/');
-    }
+
+    const from = location.state?.from;
+    const defaultRedirectPath = sessionData.user.role === UserRole.ADMIN || sessionData.user.role === UserRole.SUB_ADMIN ? '/admin' : '/';
+    
+    // Avoid redirecting back to login/register pages
+    const redirectTo = from && from.pathname !== '/login' && from.pathname !== '/register'
+      ? from
+      : defaultRedirectPath;
+
+    navigate(redirectTo, { replace: true });
   };
 
   const validatePhone = (phoneNumber: string): boolean => {

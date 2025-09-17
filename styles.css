@@ -1,5 +1,3 @@
-
-
 /* 
    ========================================
    Haryana Bus - Main Stylesheet
@@ -219,9 +217,18 @@ button {
     -webkit-mask-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3ccircle cx='12' cy='12' r='10'/%3e%3cline x1='12' x2='12' y1='8' y2='12'/%3e%3cline x1='12' x2='12.01' y1='16' y2='16'/%3e%3c/svg%3e");
     mask-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3ccircle cx='12' cy='12' r='10'/%3e%3cline x1='12' x2='12' y1='8' y2='12'/%3e%3cline x1='12' x2='12.01' y1='16' y2='16'/%3e%3c/svg%3e");
 }
-
 .text-center { text-align: center; }
 .text-right { text-align: right; }
+
+.page-header-with-back {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+.page-header-with-back > div {
+    flex-grow: 1;
+}
 
 /* 3. KEYFRAME ANIMATIONS
 --------------------------------------------- */
@@ -307,6 +314,15 @@ button {
 }
 .btn__spinner path {
     opacity: 0.75;
+}
+.back-button {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+}
+.back-button:hover {
+    background-color: var(--color-bg-secondary);
 }
 
 /* --- Card --- */
@@ -933,6 +949,36 @@ button {
     flex-direction: column;
     gap: 1.5rem;
 }
+.home-page__form-main {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+@media (min-width: 640px) {
+    .home-page__form-main {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: flex-end;
+    }
+    .home-page__route-inputs,
+    .home-page__form-main .input-wrapper {
+        grid-column: 1 / 2;
+    }
+    .home-page__form-actions {
+        grid-column: 2 / 3;
+    }
+}
+.home-page__form-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+@media (min-width: 640px) {
+    .home-page__form-actions {
+        flex-direction: row;
+        gap: 1rem;
+    }
+}
 .home-page__route-inputs {
     display: grid;
     grid-template-columns: 1fr;
@@ -952,10 +998,6 @@ button {
     padding: 0.75rem 1rem;
     color: var(--color-text-primary);
     height: calc(0.75rem * 2 + 1rem * 2 + 2px); /* Match input height */
-}
-.home-page__search-button {
-    margin-top: 0.5rem;
-    font-size: 1.125rem;
 }
 .home-page__results {
     margin-top: 3rem;
@@ -988,14 +1030,6 @@ button {
     color: var(--color-danger);
     font-weight: 600;
 }
-
-/* Home Page Search Form */
-.home-page__form-main {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
-
 
 /* --- Auth Pages (Login/Register) --- */
 .auth-page {
@@ -1091,6 +1125,20 @@ button {
 .tracking-page__card {
     max-width: 42rem;
     margin: auto;
+}
+.tracking-page__header {
+    margin-bottom: 1.5rem;
+}
+.tracking-page__booking-action {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    justify-content: center;
+}
+.btn--large {
+    padding: 1rem 2rem;
+    font-size: 1.125rem;
 }
 .tracking-page__title {
     font-size: 2rem;
@@ -1236,8 +1284,8 @@ button {
 
 /* --- Booking Page --- */
 .booking-page { padding: 2rem 0; }
-.booking-page__title { font-size: 2.5rem; font-weight: 700; text-align: center; margin-bottom: 0.5rem; color: var(--color-text-primary); }
-.booking-page__subtitle { text-align: center; font-size: 1.125rem; color: var(--color-text-secondary); margin-bottom: 2rem; }
+.booking-page__title { font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem; color: var(--color-text-primary); }
+.booking-page__subtitle { font-size: 1.125rem; color: var(--color-text-secondary); }
 .booking-page__layout { display: grid; grid-template-columns: 1fr; gap: 2rem; }
 @media (min-width: 1024px) { .booking-page__layout { grid-template-columns: 2fr 1fr; } }
 .booking-page__seat-area { position: relative; }
@@ -1320,7 +1368,11 @@ button {
 /* --- User Dashboard --- */
 .dashboard-page { padding: 2.5rem 0; }
 .dashboard-page__title { font-size: 2.5rem; font-weight: 800; color: var(--color-text-primary); margin-bottom: 0.5rem; }
-.dashboard-page__subtitle { font-size: 1.125rem; color: var(--color-text-secondary); margin-bottom: 2rem; }
+.dashboard-page__subtitle { font-size: 1.125rem; color: var(--color-text-secondary); }
+.dashboard-page .page-header-with-back .dashboard-page__title,
+.dashboard-page .page-header-with-back .dashboard-page__subtitle {
+    margin-bottom: 0;
+}
 .dashboard-page__bookings-list { max-width: 56rem; margin-left: auto; margin-right: auto; display: flex; flex-direction: column; gap: 1.5rem; }
 .booking-detail-card:hover { border-color: var(--color-primary-focus); box-shadow: 0 0 0 1px var(--color-primary-focus); }
 .booking-detail-card__container { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; gap: 1rem; }
@@ -1485,6 +1537,10 @@ button {
     color: var(--color-text-secondary);
     margin-bottom: 2rem;
 }
+.profile-page .admin-page-header__title,
+.profile-page .admin-page-header__subtitle {
+    margin-bottom: 0;
+}
 .admin-settings-sections {
     display: flex;
     flex-direction: column;
@@ -1629,16 +1685,16 @@ button {
 }
 
 /* User Management */
-.user-management__header {
+.user-management__header-content {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     align-items: flex-start;
     gap: 1rem;
-    margin-bottom: 1.5rem;
+    width: 100%;
 }
 @media (min-width: 640px) {
-    .user-management__header {
+    .user-management__header-content {
         flex-direction: row;
         align-items: center;
     }
@@ -1970,7 +2026,7 @@ button {
     justify-content: space-between;
     align-items: flex-start;
     gap: 1rem;
-    margin-bottom: 2rem;
+    width: 100%;
 }
 @media (min-width: 640px) {
     .manage-schedules__header {
@@ -2095,6 +2151,10 @@ button {
 }
 
 /* User Pass Card */
+.pass-card-page .page-header-with-back {
+    max-width: 28rem;
+    margin: 0 auto 1rem auto;
+}
 .pass-card-container {
     max-width: 28rem;
     margin: 2rem auto;

@@ -805,26 +805,68 @@ apiRouter.get('/bookings/seats/:scheduleId', async (req, res) => {
             return res.status(400).json({ message: 'Invalid origin or destination for this route.' });
         }
         
-        // A bus trip is considered "current" if it was booked within the last 24 hours.
-        // This simulates daily schedule resets without needing explicit dates on schedules,
-        // fulfilling the requirement that seats reset after a trip is complete.
+        // We need bookingDate to determine if a journey is in the past and has been completed.
         const [bookedSegments] = await dbPool.query(
-            `SELECT bs.seatId, b.origin, b.destination
+            `SELECT bs.seatId, b.origin, b.destination, b.bookingDate
              FROM bookedseats bs
              JOIN bookings b ON bs.bookingId = b.id
-             WHERE b.scheduleId = ? AND b.bookingDate >= NOW() - INTERVAL 24 HOUR`,
+             WHERE b.scheduleId = ?`,
             [scheduleId]
         );
 
         const unavailableSeats = new Set();
+        const now = new Date();
+
         for (const segment of bookedSegments) {
+            // --- Check if the journey for this booking segment is already completed ---
+            const bookingOriginStop = schedule.fullRouteStops.find(s => s.normalizedName === segment.origin.trim().toLowerCase());
+            const bookingDestStop = schedule.fullRouteStops.find(s => s.normalizedName === segment.destination.trim().toLowerCase());
+
+            if (!bookingOriginStop || !bookingDestStop || !bookingOriginStop.departure || !bookingDestStop.arrival) {
+                // If we can't determine completion time, fall back to just checking overlap for safety.
+                const bookingOriginOrder = stopOrderMap[segment.origin.trim().toLowerCase()];
+                const bookingDestinationOrder = stopOrderMap[segment.destination.trim().toLowerCase()];
+                if (bookingOriginOrder !== undefined && bookingDestinationOrder !== undefined) {
+                     if (Math.max(userOriginOrder, bookingOriginOrder) < Math.min(userDestinationOrder, bookingDestinationOrder)) {
+                         unavailableSeats.add(segment.seatId);
+                    }
+                }
+                continue;
+            }
+
+            const bookingDateTime = new Date(segment.bookingDate);
+            
+            const [depHours, depMinutes] = bookingOriginStop.departure.split(':');
+            let departureDateTime = new Date(bookingDateTime.getFullYear(), bookingDateTime.getMonth(), bookingDateTime.getDate(), Number(depHours), Number(depMinutes), 0);
+            
+            // If the booking was made after the departure time for that day, the journey is for the next day.
+            if (departureDateTime < bookingDateTime) {
+                departureDateTime.setDate(departureDateTime.getDate() + 1);
+            }
+            
+            const [arrHours, arrMinutes] = bookingDestStop.arrival.split(':');
+            let arrivalDateTime = new Date(departureDateTime); // Start with the correct departure date
+            arrivalDateTime.setHours(Number(arrHours), Number(arrMinutes), 0, 0);
+
+            // If arrival time is on the next day (e.g., departs 23:00, arrives 01:00)
+            if (arrivalDateTime < departureDateTime) {
+                arrivalDateTime.setDate(arrivalDateTime.getDate() + 1);
+            }
+            
+            // If the journey has completed, its seats are available again.
+            if (now > arrivalDateTime) {
+                continue; // This booking is for a completed journey, so the seat is free.
+            }
+
+            // --- If the journey is NOT completed, check for segment overlap ---
             const bookingOriginOrder = stopOrderMap[segment.origin.trim().toLowerCase()];
             const bookingDestinationOrder = stopOrderMap[segment.destination.trim().toLowerCase()];
             
             if (bookingOriginOrder === undefined || bookingDestinationOrder === undefined) {
                 continue;
             }
-
+            
+            // This is the core logic for checking if two segments overlap.
             if (Math.max(userOriginOrder, bookingOriginOrder) < Math.min(userDestinationOrder, bookingDestinationOrder)) {
                  unavailableSeats.add(segment.seatId);
             }
