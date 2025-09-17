@@ -949,47 +949,29 @@ button {
     flex-direction: column;
     gap: 1.5rem;
 }
-.home-page__form-main {
+
+.home-page__form-inputs-row {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 1.5rem;
+    align-items: flex-end;
 }
-@media (min-width: 640px) {
-    .home-page__form-main {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        align-items: flex-end;
-    }
-    .home-page__route-inputs,
-    .home-page__form-main .input-wrapper {
-        grid-column: 1 / 2;
-    }
-    .home-page__form-actions {
-        grid-column: 2 / 3;
-    }
+
+.home-page__form-inputs-row .input-wrapper {
+    flex: 1 1 0;
 }
-.home-page__form-actions {
+
+.home-page__district-wrapper {
+   flex-basis: 100%;
+}
+
+.home-page__form-actions-row {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    justify-content: flex-end;
     gap: 1rem;
 }
-@media (min-width: 640px) {
-    .home-page__form-actions {
-        flex-direction: row;
-        gap: 1rem;
-    }
-}
-.home-page__route-inputs {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 1rem;
-}
-@media (min-width: 640px) {
-    .home-page__route-inputs {
-        grid-template-columns: 1fr 1fr;
-        gap: 1.5rem;
-    }
-}
+
 .home-page__district-select {
     width: 100%;
     background-color: var(--color-bg-primary);
@@ -2339,3 +2321,8 @@ button {
         font-size: 14px;
     }
 }
+.home-page__form-main {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }

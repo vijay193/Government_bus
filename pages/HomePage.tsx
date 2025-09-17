@@ -152,14 +152,14 @@ export const HomePage: React.FC = () => {
           </div>
 
           <form onSubmit={handleSearch} className="home-page__search-form">
-            <div className="home-page__form-main">
+            <div className="home-page__form-inputs-row">
               {searchType === 'route' ? (
-                <div className="home-page__route-inputs">
+                <>
                   <Input list="districts" id="origin" label="Origin" value={origin} onChange={(e) => setOrigin(e.target.value)} placeholder="e.g., Rohtak" required />
                   <Input list="districts" id="destination" label="Destination" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="e.g., Panchkula" required />
-                </div>
+                </>
               ) : (
-                <div className="input-wrapper">
+                <div className="input-wrapper home-page__district-wrapper">
                   <label htmlFor="district" className="input-label">District</label>
                   <select id="district" value={district} onChange={(e) => setDistrict(e.target.value)} required className="home-page__district-select">
                     <option value="">Select a District</option>
@@ -167,19 +167,20 @@ export const HomePage: React.FC = () => {
                   </select>
                 </div>
               )}
-              <datalist id="districts">
-                {districts.map(d => <option key={d} value={d} />)}
-              </datalist>
-
-              <div className="home-page__form-actions">
+            </div>
+            
+            <div className="home-page__form-actions-row">
                 <Button type="button" variant="secondary" onClick={() => handleClearSearch()} disabled={isLoading || (schedules.length === 0 && !origin && !destination && !district)}>
                   <XCircle size={20} /> Clear
                 </Button>
                 <Button type="submit" isLoading={isLoading} className="home-page__search-button">
                   <Search size={20} /> Search Buses
                 </Button>
-              </div>
             </div>
+            
+            <datalist id="districts">
+              {districts.map(d => <option key={d} value={d} />)}
+            </datalist>
           </form>
         </Card>
 

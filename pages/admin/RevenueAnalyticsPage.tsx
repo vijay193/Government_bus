@@ -285,7 +285,8 @@ export const RevenueAnalyticsPage: React.FC = () => {
                     'Gross Revenue': booked,
                 };
             })
-            .sort((a, b) => b['Gross Revenue'] - a['Gross Revenue'])
+            // FIX: Explicitly cast properties to Number to satisfy TypeScript's strict checks for arithmetic operations.
+            .sort((a, b) => Number(b['Gross Revenue']) - Number(a['Gross Revenue']))
             .slice(0, 5);
 
 
@@ -357,7 +358,8 @@ export const RevenueAnalyticsPage: React.FC = () => {
                     <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={chartData.topDistrictsByRevenue} layout="vertical" margin={{ top: 5, right: 30, left: 30, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                            <XAxis type="number" tickFormatter={(value) => `₹${Number(value) / 1000}k`} />
+                            {/* FIX: Explicitly type `value` as `any` to prevent type errors from the charting library. */}
+                            <XAxis type="number" tickFormatter={(value: any) => `₹${Number(value) / 1000}k`} />
                             <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} />
                             <Tooltip formatter={(value: number, name: string) => [formatCurrency(value), name]} />
                             <Legend />
